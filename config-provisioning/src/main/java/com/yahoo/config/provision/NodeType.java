@@ -9,27 +9,15 @@ package com.yahoo.config.provision;
 public enum NodeType {
 
     /** A host of a set of (docker) tenant nodes */
-    host(true),
+    host,
 
     /** Nodes running the shared proxy layer */
-    proxy(false),
+    proxy,
 
     /** A node to be assigned to a tenant to run application workloads */
-    tenant(false),
+    tenant,
 
     /** A config server */
-    config(false),
+    config
 
-    /** A host of a (docker) config server node */
-    confighost(true);
-
-    private boolean isDockerHost;
-
-    NodeType(boolean isDockerHost) {
-        this.isDockerHost = isDockerHost;
-    }
-
-    public boolean isDockerHost() {
-        return isDockerHost;
-    }
 }

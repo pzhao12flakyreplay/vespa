@@ -1,7 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
-import com.yahoo.concurrent.DaemonThreadFactory;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.Deployer;
 import com.yahoo.config.provision.Deployment;
@@ -27,7 +26,7 @@ public abstract class ApplicationMaintainer extends Maintainer {
 
     private final Deployer deployer;
 
-    private final Executor deploymentExecutor = Executors.newCachedThreadPool(new DaemonThreadFactory("node repo application maintainer"));
+    private final Executor deploymentExecutor = Executors.newCachedThreadPool();
 
     protected ApplicationMaintainer(Deployer deployer, NodeRepository nodeRepository, Duration interval, JobControl jobControl) {
         super(nodeRepository, interval, jobControl);

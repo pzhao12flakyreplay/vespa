@@ -15,6 +15,7 @@ import com.yahoo.config.provision.OutOfCapacityException;
 import com.yahoo.config.provision.RegionName;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.config.provisioning.FlavorsConfig;
+import com.yahoo.path.Path;
 import com.yahoo.transaction.NestedTransaction;
 import com.yahoo.vespa.curator.transaction.CuratorTransaction;
 import com.yahoo.vespa.hosted.provision.Node;
@@ -61,6 +62,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void relocate_nodes_from_headroom_hosts() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.perf, RegionName.from("us-east")), flavorsConfig(true));
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(4, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -108,6 +110,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void relocate_nodes_from_spare_hosts() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.prod, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(4, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -154,6 +157,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void new_docker_nodes_are_marked_as_headroom_violations() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.perf, RegionName.from("us-east")), flavorsConfig(true));
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(4, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -209,6 +213,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void only_preferred_container_is_moved_from_hosts_with_headroom_violations() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.perf, RegionName.from("us-east")), flavorsConfig(true));
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(4, "host-medium", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -277,6 +282,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void reloacte_failed_nodes() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.prod, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(5, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -335,6 +341,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void do_not_relocate_nodes_from_spare_if_no_where_to_reloacte_them() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.prod, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(2, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         List<Node> dockerHosts = tester.nodeRepository().getNodes(NodeType.host, Node.State.active);
@@ -362,6 +369,7 @@ public class DynamicDockerProvisioningTest {
     @Test(expected = OutOfCapacityException.class)
     public void multiple_groups_are_on_separate_parent_hosts() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.prod, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(5, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         Flavor flavor = tester.nodeRepository().getAvailableFlavors().getFlavorOrThrow("d-1");
@@ -390,6 +398,7 @@ public class DynamicDockerProvisioningTest {
         }
 
         // Setup test
+        enableDynamicAllocation(tester);
         ApplicationId application1 = tester.makeApplicationId();
         tester.makeReadyNodes(5, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
@@ -429,6 +438,7 @@ public class DynamicDockerProvisioningTest {
     @Test
     public void non_prod_do_not_have_spares() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.perf, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
         tester.makeReadyNodes(3, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
         Flavor flavor = tester.nodeRepository().getAvailableFlavors().getFlavorOrThrow("d-3");
@@ -446,6 +456,7 @@ public class DynamicDockerProvisioningTest {
     @Test(expected = OutOfCapacityException.class)
     public void allocation_should_fail_when_host_is_not_active() {
         ProvisioningTester tester = new ProvisioningTester(new Zone(Environment.prod, RegionName.from("us-east")), flavorsConfig());
+        enableDynamicAllocation(tester);
 
         tester.makeProvisionedNodes(3, "host-small", NodeType.host, 32);
         deployZoneApp(tester);
@@ -483,9 +494,9 @@ public class DynamicDockerProvisioningTest {
         List<Node> nodes = tester.nodeRepository().getNodes(Node.State.values());
         NodeList nl = new NodeList(nodes);
         return nodes.stream()
-                    .filter(n -> n.type() == NodeType.host)
-                    .filter(n -> nl.childrenOf(n).size() == 0) // Nodes without children
-                    .collect(Collectors.toList());
+                .filter(n -> n.type() == NodeType.host)
+                .filter(n -> nl.childNodes(n).size() == 0) // Nodes without children
+                .collect(Collectors.toList());
     }
 
     private FlavorsConfig flavorsConfig(boolean includeHeadroom) {
@@ -528,6 +539,10 @@ public class DynamicDockerProvisioningTest {
                 1);
         tester.activate(applicationId, ImmutableSet.copyOf(list));
         return list;
+    }
+
+    private void enableDynamicAllocation(ProvisioningTester tester) {
+        tester.getCurator().set(Path.fromString("/provision/v1/dynamicDockerAllocation"), new byte[0]);
     }
 
     private boolean isInactiveOrRetired(Node node) {

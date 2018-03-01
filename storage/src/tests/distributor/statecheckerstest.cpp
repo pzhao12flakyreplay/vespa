@@ -1,26 +1,36 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 
+#include <vespa/vdstestlib/cppunit/macros.h>
 #include <tests/common/dummystoragelink.h>
-#include <tests/distributor/distributortestutil.h>
-#include <vespa/config-stor-distribution.h>
-#include <vespa/document/test/make_bucket_space.h>
-#include <vespa/document/test/make_document_bucket.h>
+#include <vespa/storageapi/message/persistence.h>
 #include <vespa/storage/distributor/bucketdbupdater.h>
-#include <vespa/storage/distributor/distributor.h>
-#include <vespa/storage/distributor/distributor_bucket_space.h>
-#include <vespa/storage/distributor/distributor_bucket_space_repo.h>
+#include <vespa/document/fieldvalue/document.h>
+#include <vespa/storage/common/bucketmessages.h>
+#include <vespa/storage/config/config-stor-distributormanager.h>
 #include <vespa/storage/distributor/idealstatemanager.h>
 #include <vespa/storage/distributor/operations/idealstate/mergeoperation.h>
-#include <vespa/storage/distributor/statecheckers.h>
-#include <vespa/storageapi/message/persistence.h>
+#include <vespa/storage/distributor/operations/idealstate/removebucketoperation.h>
+#include <vespa/storage/distributor/operations/idealstate/setbucketstateoperation.h>
+#include <vespa/storage/distributor/operations/idealstate/splitoperation.h>
+#include <vespa/storage/distributor/maintenance/node_maintenance_stats_tracker.h>
+#include <vespa/storage/distributor/distributor_bucket_space_repo.h>
+#include <vespa/storage/distributor/distributor_bucket_space.h>
 #include <vespa/storageapi/message/stat.h>
-#include <vespa/vdstestlib/cppunit/macros.h>
+#include <vespa/storage/storageutil/utils.h>
+#include <tests/distributor/distributortestutil.h>
+#include <vespa/storage/distributor/statecheckers.h>
+#include <vespa/storageapi/message/state.h>
+#include <vespa/config-stor-distribution.h>
+#include <vespa/storage/distributor/distributor.h>
+#include <vespa/document/test/make_bucket_space.h>
+#include <vespa/document/test/make_document_bucket.h>
 
 using namespace std::literals::string_literals;
 using document::test::makeBucketSpace;
 using document::test::makeDocumentBucket;
 
-namespace storage::distributor {
+namespace storage {
+namespace distributor {
 
 struct StateCheckersTest : public CppUnit::TestFixture,
                            public DistributorTestUtil
@@ -93,7 +103,7 @@ struct StateCheckersTest : public CppUnit::TestFixture,
     void statsUpdatedWhenMergingDueToOutOfSyncCopies();
 
     void enableClusterState(const lib::ClusterState& systemState) {
-        _distributor->enableClusterStateBundle(lib::ClusterStateBundle(systemState));
+        _distributor->enableClusterState(systemState);
     }
 
     void insertJoinableBuckets();
@@ -105,7 +115,8 @@ struct StateCheckersTest : public CppUnit::TestFixture,
         std::vector<uint16_t> idealNodes(
                 distributorBucketSpace
                 .getDistribution().getIdealStorageNodes(
-                        distributorBucketSpace.getClusterState(),
+                        getIdealStateManager().getDistributorComponent()
+                                .getClusterState(),
                         bucket,
                         "ui"));
         CPPUNIT_ASSERT_EQUAL(expected, idealNodes);
@@ -255,7 +266,8 @@ struct StateCheckersTest : public CppUnit::TestFixture,
         document::BucketId bid(17, 0);
         addNodesToBucketDB(bid, params._bucketInfo);
         setRedundancy(params._redundancy);
-        enableDistributorClusterState(params._clusterState);
+        _distributor->enableClusterState(
+                lib::ClusterState(params._clusterState));
         NodeMaintenanceStatsTracker statsTracker;
         StateChecker::Context c(
                 getExternalOperationHandler(), getDistributorBucketSpace(), statsTracker, makeDocumentBucket(bid));
@@ -782,7 +794,7 @@ StateCheckersTest::testSynchronizeAndMove(const std::string& bucketInfo,
     SynchronizeAndMoveStateChecker checker;
     setRedundancy(redundancy);
 
-    enableDistributorClusterState(clusterState);
+    _distributor->enableClusterState(lib::ClusterState(clusterState));
     NodeMaintenanceStatsTracker statsTracker;
     StateChecker::Context c(getExternalOperationHandler(), getDistributorBucketSpace(), statsTracker, makeDocumentBucket(bid));
     return testStateChecker(checker, c, false, blocker, includePriority);
@@ -975,7 +987,7 @@ StateCheckersTest::testDeleteExtraCopies(
     setRedundancy(redundancy);
 
     if (!clusterState.empty()) {
-        enableDistributorClusterState(clusterState);
+        _distributor->enableClusterState(lib::ClusterState(clusterState));
     }
     DeleteExtraCopiesStateChecker checker;
     NodeMaintenanceStatsTracker statsTracker;
@@ -994,7 +1006,7 @@ StateCheckersTest::testDeleteExtraCopies()
         std::vector<uint16_t> idealNodes(
                 distributorBucketSpace
                 .getDistribution().getIdealStorageNodes(
-                        distributorBucketSpace.getClusterState(),
+                        getIdealStateManager().getDistributorComponent().getClusterState(),
                         document::BucketId(17, 0),
                         "ui"));
         std::vector<uint16_t> wanted;
@@ -1800,7 +1812,7 @@ StateCheckersTest::statsUpdatedWhenMergingDueToMove()
     {
         NodeMaintenanceStats wanted;
         wanted.copyingOut = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1));
     }
     // Moving 1 bucket from nodes {0, 2} into 3.
     // Note that we do not at this point in time distinguish _which_ of these
@@ -1808,13 +1820,13 @@ StateCheckersTest::statsUpdatedWhenMergingDueToMove()
     {
         NodeMaintenanceStats wanted;
         wanted.copyingIn = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3));
     }
     {
         NodeMaintenanceStats wanted;
         wanted.movingOut = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(0, makeBucketSpace()));
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(2, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(0));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(2));
     }
 }
 
@@ -1830,12 +1842,12 @@ StateCheckersTest::statsUpdatedWhenMergingDueToMissingCopy()
     {
         NodeMaintenanceStats wanted;
         wanted.copyingIn = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3));
     }
     {
         NodeMaintenanceStats wanted;
         wanted.copyingOut = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1));
     }
 }
 
@@ -1849,9 +1861,10 @@ StateCheckersTest::statsUpdatedWhenMergingDueToOutOfSyncCopies()
     {
         NodeMaintenanceStats wanted;
         wanted.syncing = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1, makeBucketSpace()));
-        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(1));
+        CPPUNIT_ASSERT_EQUAL(wanted, runner.stats().forNode(3));
     }
 }
 
-}
+} // distributor
+} // storage}

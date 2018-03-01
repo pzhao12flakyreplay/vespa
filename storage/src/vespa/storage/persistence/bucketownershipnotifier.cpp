@@ -4,7 +4,6 @@
 #include <vespa/storage/common/nodestateupdater.h>
 #include <vespa/storage/common/bucketoperationlogger.h>
 #include <vespa/storage/common/content_bucket_space_repo.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/storageapi/message/bucket.h>
 #include <vespa/vdslib/distribution/distribution.h>
 #include <vespa/vespalib/util/backtrace.h>
@@ -22,9 +21,8 @@ BucketOwnershipNotifier::getOwnerDistributorForBucket(
 {
     try {
         auto distribution(_component.getBucketSpaceRepo().get(bucket.getBucketSpace()).getDistribution());
-        const auto clusterStateBundle = _component.getStateUpdater().getClusterStateBundle();
-        const auto &clusterState = *clusterStateBundle->getDerivedClusterState(bucket.getBucketSpace());
-        return (distribution->getIdealDistributorNode(clusterState, bucket.getBucketId()));
+        return (distribution->getIdealDistributorNode(
+                        *_component.getStateUpdater().getSystemState(), bucket.getBucketId()));
         // If we get exceptions there aren't any distributors, so they'll have
         // to explicitly fetch all bucket info eventually anyway.
     } catch (lib::TooFewBucketBitsInUseException& e) {

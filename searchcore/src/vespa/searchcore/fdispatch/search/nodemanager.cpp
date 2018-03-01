@@ -391,7 +391,7 @@ FastS_NodeManager::getChildInfo()
 
 
 void
-FastS_NodeManager::logPerformance(vespalib::Executor &executor)
+FastS_NodeManager::logPerformance()
 {
     _queryPerf.reset();
     FastS_DataSetCollection *dsc = GetDataSetCollection();
@@ -403,7 +403,7 @@ FastS_NodeManager::logPerformance(vespalib::Executor &executor)
     }
 
     dsc->subRef();
-    executor.execute(_queryPerf.make_log_task());
+    _queryPerf.log();
 }
 
 

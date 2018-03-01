@@ -5,12 +5,12 @@ import com.google.common.base.Joiner;
 import com.google.common.collect.ImmutableSet;
 import com.google.inject.Inject;
 import com.yahoo.component.Version;
-import com.yahoo.config.application.api.DeploymentSpec;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationName;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.RegionName;
 import com.yahoo.config.provision.TenantName;
+import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.container.jdisc.HttpRequest;
 import com.yahoo.container.jdisc.HttpResponse;
 import com.yahoo.container.jdisc.LoggingRequestHandler;
@@ -19,11 +19,6 @@ import com.yahoo.log.LogLevel;
 import com.yahoo.slime.Cursor;
 import com.yahoo.slime.Inspector;
 import com.yahoo.slime.Slime;
-import com.yahoo.vespa.athenz.api.AthenzDomain;
-import com.yahoo.vespa.athenz.api.AthenzIdentity;
-import com.yahoo.vespa.athenz.api.AthenzPrincipal;
-import com.yahoo.vespa.athenz.api.AthenzUser;
-import com.yahoo.vespa.athenz.api.NToken;
 import com.yahoo.vespa.config.SlimeUtils;
 import com.yahoo.vespa.hosted.controller.AlreadyExistsException;
 import com.yahoo.vespa.hosted.controller.Application;
@@ -41,6 +36,7 @@ import com.yahoo.vespa.hosted.controller.api.application.v4.model.ScrewdriverBui
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.configserverbindings.RefeedAction;
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.configserverbindings.RestartAction;
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.configserverbindings.ServiceInfo;
+import com.yahoo.vespa.athenz.api.AthenzDomain;
 import com.yahoo.vespa.hosted.controller.api.identifiers.DeploymentId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.GitBranch;
 import com.yahoo.vespa.hosted.controller.api.identifiers.GitCommit;
@@ -52,13 +48,10 @@ import com.yahoo.vespa.hosted.controller.api.identifiers.ScrewdriverId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.UserGroup;
 import com.yahoo.vespa.hosted.controller.api.identifiers.UserId;
-import com.yahoo.vespa.hosted.controller.api.integration.athenz.AthenzClientFactory;
-import com.yahoo.vespa.hosted.controller.api.integration.athenz.ZmsException;
 import com.yahoo.vespa.hosted.controller.api.integration.configserver.ConfigServerException;
 import com.yahoo.vespa.hosted.controller.api.integration.configserver.Log;
 import com.yahoo.vespa.hosted.controller.api.integration.organization.User;
 import com.yahoo.vespa.hosted.controller.api.integration.routing.RotationStatus;
-import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.vespa.hosted.controller.application.ApplicationPackage;
 import com.yahoo.vespa.hosted.controller.application.ApplicationVersion;
 import com.yahoo.vespa.hosted.controller.application.Change;
@@ -66,10 +59,15 @@ import com.yahoo.vespa.hosted.controller.application.ClusterCost;
 import com.yahoo.vespa.hosted.controller.application.ClusterUtilization;
 import com.yahoo.vespa.hosted.controller.application.Deployment;
 import com.yahoo.vespa.hosted.controller.application.DeploymentCost;
-import com.yahoo.vespa.hosted.controller.application.DeploymentJobs;
 import com.yahoo.vespa.hosted.controller.application.DeploymentMetrics;
 import com.yahoo.vespa.hosted.controller.application.JobStatus;
 import com.yahoo.vespa.hosted.controller.application.SourceRevision;
+import com.yahoo.vespa.hosted.controller.api.integration.athenz.AthenzClientFactory;
+import com.yahoo.vespa.athenz.api.AthenzIdentity;
+import com.yahoo.vespa.athenz.api.AthenzPrincipal;
+import com.yahoo.vespa.athenz.api.AthenzUser;
+import com.yahoo.vespa.athenz.api.NToken;
+import com.yahoo.vespa.hosted.controller.api.integration.athenz.ZmsException;
 import com.yahoo.vespa.hosted.controller.restapi.ErrorResponse;
 import com.yahoo.vespa.hosted.controller.restapi.MessageResponse;
 import com.yahoo.vespa.hosted.controller.restapi.Path;
@@ -82,7 +80,6 @@ import com.yahoo.yolean.Exceptions;
 
 import javax.ws.rs.BadRequestException;
 import javax.ws.rs.ForbiddenException;
-import javax.ws.rs.InternalServerErrorException;
 import javax.ws.rs.NotAuthorizedException;
 import java.io.IOException;
 import java.io.InputStream;
@@ -93,7 +90,6 @@ import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Scanner;
 import java.util.logging.Level;
@@ -109,14 +105,16 @@ import java.util.logging.Level;
 public class ApplicationApiHandler extends LoggingRequestHandler {
 
     private final Controller controller;
+    private final Authorizer authorizer;
     private final AthenzClientFactory athenzClientFactory;
 
     @Inject
     public ApplicationApiHandler(LoggingRequestHandler.Context parentCtx,
-                                 Controller controller,
+                                 Controller controller, Authorizer authorizer,
                                  AthenzClientFactory athenzClientFactory) {
         super(parentCtx);
         this.controller = controller;
+        this.authorizer = authorizer;
         this.athenzClientFactory = athenzClientFactory;
     }
 
@@ -194,14 +192,13 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         Path path = new Path(request.getUri().getPath());
         if (path.matches("/application/v4/tenant/{tenant}")) return createTenant(path.get("tenant"), request);
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}")) return createApplication(path.get("tenant"), path.get("application"), request);
-        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/promote")) return promoteApplication(path.get("tenant"), path.get("application"), request);
+        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/promote")) return promoteApplication(path.get("tenant"), path.get("application"));
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/deploying")) return deploy(path.get("tenant"), path.get("application"), request);
-        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/jobreport")) return notifyJobCompletion(path.get("tenant"), path.get("application"), request);
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}")) return deploy(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), request);
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/deploy")) return deploy(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), request); // legacy synonym of the above
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/restart")) return restart(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), request);
-        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/log")) return log(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), request);
-        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/promote")) return promoteApplicationDeployment(path.get("tenant"), path.get("application"), path.get("environment"), path.get("region"), path.get("instance"), request);
+        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/log")) return log(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"));
+        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/promote")) return promoteApplicationDeployment(path.get("tenant"), path.get("application"), path.get("environment"), path.get("region"));
         return ErrorResponse.notFoundError("Nothing at " + path);
     }
 
@@ -210,7 +207,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         if (path.matches("/application/v4/tenant/{tenant}")) return deleteTenant(path.get("tenant"), request);
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}")) return deleteApplication(path.get("tenant"), path.get("application"), request);
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/deploying")) return cancelDeploy(path.get("tenant"), path.get("application"));
-        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}")) return deactivate(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), request);
+        if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}")) return deactivate(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"));
         if (path.matches("/application/v4/tenant/{tenant}/application/{application}/environment/{environment}/region/{region}/instance/{instance}/global-rotation/override"))
             return setGlobalRotationOverride(path.get("tenant"), path.get("application"), path.get("instance"), path.get("environment"), path.get("region"), true, request);
         return ErrorResponse.notFoundError("Nothing at " + path);
@@ -241,7 +238,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     private HttpResponse authenticatedUser(HttpRequest request) {
         String userIdString = request.getProperty("userOverride");
         if (userIdString == null)
-            userIdString = getUserId(request)
+            userIdString = userFrom(request)
                     .map(UserId::id)
                     .orElseThrow(() -> new ForbiddenException("You must be authenticated or specify userOverride"));
         UserId userId = new UserId(userIdString);
@@ -502,12 +499,13 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         if (!existingTenant.isPresent())
             return ErrorResponse.notFoundError("Tenant '" + tenantName + "' does not exist");
 
+        authorizer.throwIfUnauthorized(existingTenant.get().getId(), request);
 
         // Decode payload (reason) and construct parameter to the configserver
 
         Inspector requestData = toSlime(request.getData()).get();
         String reason = mandatory("reason", requestData).asString();
-        String agent = getUserPrincipal(request).getIdentity().getFullName();
+        String agent = authorizer.getIdentity(request).getFullName();
         long timestamp = controller.clock().instant().getEpochSecond();
         EndpointStatus.Status status = inService ? EndpointStatus.Status.in : EndpointStatus.Status.out;
         EndpointStatus endPointStatus = new EndpointStatus(status, reason, agent, timestamp);
@@ -596,8 +594,8 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     }
 
     private HttpResponse createUser(HttpRequest request) {
-        Optional<UserId> user = getUserId(request);
-        if ( ! user.isPresent() ) throw new ForbiddenException("Not authenticated or not an user.");
+        Optional<UserId> user = userFrom(request);
+        if ( ! user.isPresent() ) throw new ForbiddenException("Not authenticated.");
 
         try {
             controller.tenants().createUserTenant(user.get().id());
@@ -614,6 +612,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
 
         Inspector requestData = toSlime(request.getData()).get();
 
+        authorizer.throwIfUnauthorized(existingTenant.get().getId(), request);
         Tenant updatedTenant;
         switch (existingTenant.get().tenantType()) {
             case USER: {
@@ -625,7 +624,8 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
                                                          userGroup,
                                                          new Property(mandatory("property", requestData).asString()),
                                                          optional("propertyId", requestData).map(PropertyId::new));
-                controller.tenants().updateTenant(updatedTenant, getUserPrincipal(request).getNToken());
+                throwIfNotSuperUserOrPartOfOpsDbGroup(userGroup, request);
+                controller.tenants().updateTenant(updatedTenant, authorizer.getNToken(request));
                 break;
             }
             case ATHENS: {
@@ -635,7 +635,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
                                                           new AthenzDomain(mandatory("athensDomain", requestData).asString()),
                                                           new Property(mandatory("property", requestData).asString()),
                                                           optional("propertyId", requestData).map(PropertyId::new));
-                controller.tenants().updateTenant(updatedTenant, getUserPrincipal(request).getNToken());
+                controller.tenants().updateTenant(updatedTenant, authorizer.getNToken(request));
                 break;
             }
             default: {
@@ -656,10 +656,12 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
                                    optional("property", requestData).map(Property::new),
                                    optional("athensDomain", requestData).map(AthenzDomain::new),
                                    optional("propertyId", requestData).map(PropertyId::new));
+        if (tenant.isOpsDbTenant())
+            throwIfNotSuperUserOrPartOfOpsDbGroup(new UserGroup(mandatory("userGroup", requestData).asString()), request);
         if (tenant.isAthensTenant())
             throwIfNotAthenzDomainAdmin(new AthenzDomain(mandatory("athensDomain", requestData).asString()), request);
 
-        controller.tenants().addTenant(tenant, getUserPrincipal(request).getNToken());
+        controller.tenants().addTenant(tenant, authorizer.getNToken(request));
         return tenant(tenant, request, true);
     }
 
@@ -670,8 +672,9 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         Property property = new Property(mandatory("property", requestData).asString());
         PropertyId propertyId = new PropertyId(mandatory("propertyId", requestData).asString());
 
+        authorizer.throwIfUnauthorized(tenantid, request);
         throwIfNotAthenzDomainAdmin(tenantDomain, request);
-        NToken nToken = getUserPrincipal(request).getNToken()
+        NToken nToken = authorizer.getNToken(request)
                 .orElseThrow(() ->
                                      new BadRequestException("The NToken for a domain admin is required to migrate tenant to Athens"));
         Tenant tenant = controller.tenants().migrateTenantToAthenz(tenantid, tenantDomain, propertyId, property, nToken);
@@ -679,9 +682,10 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     }
 
     private HttpResponse createApplication(String tenantName, String applicationName, HttpRequest request) {
+        authorizer.throwIfUnauthorized(new TenantId(tenantName), request);
         Application application;
         try {
-            application = controller.applications().createApplication(ApplicationId.from(tenantName, applicationName, "default"), getUserPrincipal(request).getNToken());
+            application = controller.applications().createApplication(ApplicationId.from(tenantName, applicationName, "default"), authorizer.getNToken(request));
         }
         catch (ZmsException e) { // TODO: Push conversion down
             if (e.getCode() == com.yahoo.jdisc.Response.Status.FORBIDDEN)
@@ -696,7 +700,6 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     }
 
     /** Trigger deployment of the last built application package, on a given version */
-    // TODO Consider move to API for maintenance related operations
     private HttpResponse deploy(String tenantName, String applicationName, HttpRequest request) {
         Version version = decideDeployVersion(request);
         if ( ! systemHasVersion(version))
@@ -716,7 +719,6 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     }
 
     /** Cancel any ongoing change for given application */
-    // TODO Consider move to API for maintenance related operations
     private HttpResponse cancelDeploy(String tenantName, String applicationName) {
         ApplicationId id = ApplicationId.from(tenantName, applicationName, "default");
         Application application = controller.applications().require(id);
@@ -734,7 +736,6 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     private HttpResponse restart(String tenantName, String applicationName, String instanceName, String environment, String region, HttpRequest request) {
         DeploymentId deploymentId = new DeploymentId(ApplicationId.from(tenantName, applicationName, instanceName),
                                                      ZoneId.from(environment, region));
-
         // TODO: Propagate all filters
         Optional<Hostname> hostname = Optional.ofNullable(request.getProperty("hostname")).map(Hostname::new);
         controller.applications().restart(deploymentId, hostname);
@@ -752,11 +753,10 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
      * the application is working. It is called for all production zones, also those in which the application is not present,
      * and possibly before it is present, so failures are normal and expected.
      */
-    private HttpResponse log(String tenantName, String applicationName, String instanceName, String environment, String region, HttpRequest request) {
+    private HttpResponse log(String tenantName, String applicationName, String instanceName, String environment, String region) {
         try {
             DeploymentId deploymentId = new DeploymentId(ApplicationId.from(tenantName, applicationName, instanceName),
                                                          ZoneId.from(environment, region));
-
             return new JacksonJsonResponse(controller.grabLog(deploymentId));
         }
         catch (RuntimeException e) {
@@ -778,8 +778,10 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
 
         Optional<ApplicationPackage> applicationPackage = Optional.ofNullable(dataParts.get("applicationZip"))
                                                                   .map(ApplicationPackage::new);
-
-        verifyApplicationIdentityConfiguration(tenantName, applicationPackage);
+        DeployAuthorizer deployAuthorizer = new DeployAuthorizer(controller.zoneRegistry(), athenzClientFactory);
+        Tenant tenant = controller.tenants().tenant(new TenantId(tenantName)).orElseThrow(() -> new NotExistsException(new TenantId(tenantName)));
+        Principal principal = authorizer.getPrincipal(request);
+        deployAuthorizer.throwIfUnauthorizedForDeploy(principal, Environment.from(environment), tenant, applicationId, applicationPackage);
 
         // TODO: get rid of the json object
         DeployOptions deployOptionsJsonClass = new DeployOptions(screwdriverBuildJobFromSlime(deployOptions.field("screwdriverBuildJob")),
@@ -793,45 +795,30 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         return new SlimeJsonResponse(toSlime(result));
     }
 
-    private void verifyApplicationIdentityConfiguration(String tenantName, Optional<ApplicationPackage> applicationPackage) {
-        // Validate that domain in identity configuration (deployment.xml) is same as tenant domain
-        applicationPackage.map(ApplicationPackage::deploymentSpec).flatMap(DeploymentSpec::athenzDomain)
-                .ifPresent(identityDomain -> {
-                    Tenant tenant = controller.tenants().tenant(new TenantId(tenantName)).orElseThrow(() -> new IllegalArgumentException("Tenant does not exist"));
-                    AthenzDomain tenantDomain = tenant.getAthensDomain().orElseThrow(() -> new IllegalArgumentException("Identity provider only available to Athenz onboarded tenants"));
-                    if (! Objects.equals(tenantDomain.getName(), identityDomain.value())) {
-                        throw new ForbiddenException(
-                                String.format(
-                                        "Athenz domain in deployment.xml: [%s] must match tenant domain: [%s]",
-                                        identityDomain.value(),
-                                        tenantDomain.getName()
-                                ));
-                    }
-                });
-    }
-
     private HttpResponse deleteTenant(String tenantName, HttpRequest request) {
         Optional<Tenant> tenant = controller.tenants().tenant(new TenantId(tenantName));
         if ( ! tenant.isPresent()) return ErrorResponse.notFoundError("Could not delete tenant '" + tenantName + "': Tenant not found"); // NOTE: The Jersey implementation would silently ignore this
 
-        controller.tenants().deleteTenant(new TenantId(tenantName), getUserPrincipal(request).getNToken());
+        authorizer.throwIfUnauthorized(new TenantId(tenantName), request);
+        controller.tenants().deleteTenant(new TenantId(tenantName), authorizer.getNToken(request));
 
         // TODO: Change to a message response saying the tenant was deleted
         return tenant(tenant.get(), request, false);
     }
 
     private HttpResponse deleteApplication(String tenantName, String applicationName, HttpRequest request) {
+        authorizer.throwIfUnauthorized(new TenantId(tenantName), request);
+
         ApplicationId id = ApplicationId.from(tenantName, applicationName, "default");
-        controller.applications().deleteApplication(id, getUserPrincipal(request).getNToken());
+        controller.applications().deleteApplication(id, authorizer.getNToken(request));
         return new EmptyJsonResponse(); // TODO: Replicates current behavior but should return a message response instead
     }
 
-    private HttpResponse deactivate(String tenantName, String applicationName, String instanceName, String environment, String region, HttpRequest request) {
+    private HttpResponse deactivate(String tenantName, String applicationName, String instanceName, String environment, String region) {
         Application application = controller.applications().require(ApplicationId.from(tenantName, applicationName, instanceName));
 
         ZoneId zone = ZoneId.from(environment, region);
         Deployment deployment = application.deployments().get(zone);
-
         if (deployment == null) {
             // Attempt to deactivate application even if the deployment is not known by the controller
             controller.applications().deactivate(application, zone);
@@ -850,7 +837,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     /**
      * Promote application Chef environments. To be used by component jobs only
      */
-    private HttpResponse promoteApplication(String tenantName, String applicationName, HttpRequest request) {
+    private HttpResponse promoteApplication(String tenantName, String applicationName) {
         try{
             ApplicationChefEnvironment chefEnvironment = new ApplicationChefEnvironment(controller.system());
             String sourceEnvironment = chefEnvironment.systemChefEnvironment();
@@ -866,7 +853,7 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
     /**
      * Promote application Chef environments for jobs that deploy applications
      */
-    private HttpResponse promoteApplicationDeployment(String tenantName, String applicationName, String environmentName, String regionName, String instanceName, HttpRequest request) {
+    private HttpResponse promoteApplicationDeployment(String tenantName, String applicationName, String environmentName, String regionName) {
         try {
             ApplicationChefEnvironment chefEnvironment = new ApplicationChefEnvironment(controller.system());
             String sourceEnvironment = chefEnvironment.applicationSourceEnvironment(TenantName.from(tenantName), ApplicationName.from(applicationName));
@@ -879,43 +866,13 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         }
     }
 
-    private HttpResponse notifyJobCompletion(String tenant, String applicationName, HttpRequest request) {
-        try {
-            controller.applications().notifyJobCompletion(toJobReport(tenant, applicationName, toSlime(request.getData()).get()));
-            return new MessageResponse("ok");
-        } catch (IllegalStateException e) {
-            return ErrorResponse.badRequest(Exceptions.toMessageString(e));
-        }
-    }
-
-    private static DeploymentJobs.JobReport toJobReport(String tenantName, String applicationName, Inspector report) {
-        Optional<DeploymentJobs.JobError> jobError = Optional.empty();
-        if (report.field("jobError").valid()) {
-            jobError = Optional.of(DeploymentJobs.JobError.valueOf(report.field("jobError").asString()));
-        }
-        return new DeploymentJobs.JobReport(
-                ApplicationId.from(tenantName, applicationName, report.field("instance").asString()),
-                DeploymentJobs.JobType.fromJobName(report.field("jobName").asString()),
-                report.field("projectId").asLong(),
-                report.field("buildNumber").asLong(),
-                toSourceRevision(report.field("sourceRevision")),
-                jobError
-        );
-    }
-
-    private static Optional<SourceRevision> toSourceRevision(Inspector object) {
-        if (!object.field("repository").valid() ||
-                !object.field("branch").valid() ||
-                !object.field("commit").valid()) {
-            return Optional.empty();
-        }
-        return Optional.of(new SourceRevision(object.field("repository").asString(), object.field("branch").asString(),
-                                              object.field("commit").asString()));
-    }
-
-    private Tenant getTenantOrThrow(String tenantName) {
-        return controller.tenants().tenant(new TenantId(tenantName))
-                .orElseThrow(() -> new NotExistsException(new TenantId(tenantName)));
+    private Optional<UserId> userFrom(HttpRequest request) {
+        return authorizer.getPrincipalIfAny(request)
+                .map(AthenzPrincipal::getIdentity)
+                .filter(AthenzUser.class::isInstance)
+                .map(AthenzUser.class::cast)
+                .map(AthenzUser::getName)
+                .map(UserId::new);
     }
 
     private void toSlime(Cursor object, Tenant tenant, HttpRequest request, boolean listApplications) {
@@ -1026,33 +983,24 @@ public class ApplicationApiHandler extends LoggingRequestHandler {
         }
     }
 
-    private void throwIfNotAthenzDomainAdmin(AthenzDomain tenantDomain, HttpRequest request) {
-        AthenzIdentity identity = getUserPrincipal(request).getIdentity();
-        boolean isDomainAdmin = athenzClientFactory.createZmsClientWithServicePrincipal()
-                .isDomainAdmin(identity, tenantDomain);
-        if ( ! isDomainAdmin) {
-            throw new ForbiddenException(
-                    String.format("The user '%s' is not admin in Athenz domain '%s'", identity.getFullName(), tenantDomain.getName()));
+    private void throwIfNotSuperUserOrPartOfOpsDbGroup(UserGroup userGroup, HttpRequest request) {
+        AthenzIdentity identity = authorizer.getIdentity(request);
+        if (!(identity instanceof AthenzUser)) {
+            throw new ForbiddenException("Identity not an user: " + identity.getFullName());
+        }
+        AthenzUser user = (AthenzUser) identity;
+        if (!authorizer.isSuperUser(request) && !authorizer.isGroupMember(new UserId(user.getName()), userGroup) ) {
+            throw new ForbiddenException(String.format("User '%s' is not super user or part of the OpsDB user group '%s'",
+                                                       user.getName(), userGroup.id()));
         }
     }
 
-    private static Optional<UserId> getUserId(HttpRequest request) {
-        return Optional.of(getUserPrincipal(request))
-                .map(AthenzPrincipal::getIdentity)
-                .filter(AthenzUser.class::isInstance)
-                .map(AthenzUser.class::cast)
-                .map(AthenzUser::getName)
-                .map(UserId::new);
-    }
-
-    private static AthenzPrincipal getUserPrincipal(HttpRequest request) {
-        Principal principal = request.getJDiscRequest().getUserPrincipal();
-        if (principal == null) throw new InternalServerErrorException("Expected a user principal");
-        if (!(principal instanceof AthenzPrincipal))
-            throw new InternalServerErrorException(
-                    String.format("Expected principal of type %s, got %s",
-                                  AthenzPrincipal.class.getSimpleName(), principal.getClass().getName()));
-        return (AthenzPrincipal) principal;
+    private void throwIfNotAthenzDomainAdmin(AthenzDomain tenantDomain, HttpRequest request) {
+        AthenzIdentity identity = authorizer.getIdentity(request);
+        if ( ! authorizer.isAthenzDomainAdmin(identity, tenantDomain)) {
+            throw new ForbiddenException(
+                    String.format("The user '%s' is not admin in Athenz domain '%s'", identity.getFullName(), tenantDomain.getName()));
+        }
     }
 
     private Inspector mandatory(String key, Inspector object) {

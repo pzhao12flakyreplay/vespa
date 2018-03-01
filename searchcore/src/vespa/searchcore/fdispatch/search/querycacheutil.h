@@ -80,15 +80,12 @@ public:
             ret = 0.0;
         return ret;
     }
-    void SetCoverage(uint64_t coverageDocs, uint64_t activeDocs, uint64_t soonActiveDocs,
-                     uint32_t degradeReason, uint16_t nodesQueried, uint16_t nodesReplied)
+    void SetCoverage(uint64_t coverageDocs, uint64_t activeDocs, uint64_t soonActiveDocs, uint32_t degradeReason)
     {
         _searchInfo._coverageDocs  = coverageDocs;
         _searchInfo._activeDocs  = activeDocs;
         _searchInfo._soonActiveDocs = soonActiveDocs;
         _searchInfo._degradeReason = degradeReason;
-        _searchInfo._nodesQueried = nodesQueried;
-        _searchInfo._nodesReplied = nodesReplied;
     }
     void SetAlignedHitCount(uint32_t alignedHitCount) {
         if (alignedHitCount > _alignedMaxHits) {

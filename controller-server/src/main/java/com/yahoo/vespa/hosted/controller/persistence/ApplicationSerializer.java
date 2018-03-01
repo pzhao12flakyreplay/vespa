@@ -10,6 +10,7 @@ import com.yahoo.slime.ArrayTraverser;
 import com.yahoo.slime.Cursor;
 import com.yahoo.slime.Inspector;
 import com.yahoo.slime.Slime;
+import com.yahoo.slime.Type;
 import com.yahoo.vespa.config.SlimeUtils;
 import com.yahoo.vespa.hosted.controller.Application;
 import com.yahoo.vespa.hosted.controller.api.integration.MetricsService.ApplicationMetrics;
@@ -63,6 +64,7 @@ public class ApplicationSerializer {
     private final String deployTimeField = "deployTime";
     private final String applicationBuildNumberField = "applicationBuildNumber";
     private final String applicationPackageRevisionField = "applicationPackageRevision";
+    private final String applicationPackageHashField = "applicationPackageHash";
     private final String sourceRevisionField = "sourceRevision";
     private final String repositoryField = "repositoryField";
     private final String branchField = "branchField";
@@ -85,6 +87,7 @@ public class ApplicationSerializer {
     private final String jobRunIdField = "id";
     private final String versionField = "version";
     private final String revisionField = "revision";
+    private final String upgradeField = "upgrade";
     private final String reasonField = "reason";
     private final String atField = "at";
 
@@ -200,6 +203,11 @@ public class ApplicationSerializer {
         if (applicationVersion.buildNumber().isPresent() && applicationVersion.source().isPresent()) {
             object.setLong(applicationBuildNumberField, applicationVersion.buildNumber().get());
             toSlime(applicationVersion.source().get(), object.setObject(sourceRevisionField));
+        } else if (applicationVersion.applicationPackageHash().isPresent()) { // TODO: Remove after 2018-03-01
+            object.setString(applicationPackageHashField, applicationVersion.applicationPackageHash().get());
+            if (applicationVersion.source().isPresent()){
+                toSlime(applicationVersion.source().get(), object.setObject(sourceRevisionField));
+            }
         }
     }
 
@@ -237,6 +245,7 @@ public class ApplicationSerializer {
         object.setLong(jobRunIdField, jobRun.get().id());
         object.setString(versionField, jobRun.get().version().toString());
         toSlime(jobRun.get().applicationVersion(), object.setObject(revisionField));
+        object.setBool(upgradeField, jobRun.get().upgrade());
         object.setString(reasonField, jobRun.get().reason());
         object.setLong(atField, jobRun.get().at().toEpochMilli());
     }
@@ -262,7 +271,7 @@ public class ApplicationSerializer {
         List<Deployment> deployments = deploymentsFromSlime(root.field(deploymentsField));
         DeploymentJobs deploymentJobs = deploymentJobsFromSlime(root.field(deploymentJobsField));
         Change deploying = changeFromSlime(root.field(deployingField));
-        Change outstandingChange = changeFromSlime(root.field(outstandingChangeField));
+        Change outstandingChange = outstandingChangeFromSlime(root.field(outstandingChangeField));
         Optional<IssueId> ownershipIssueId = optionalString(root.field(ownershipIssueIdField)).map(IssueId::from);
         ApplicationMetrics metrics = new ApplicationMetrics(root.field(queryQualityField).asDouble(),
                                                             root.field(writeQualityField).asDouble());
@@ -340,8 +349,13 @@ public class ApplicationSerializer {
 
     private ApplicationVersion applicationVersionFromSlime(Inspector object) {
         if ( ! object.valid()) return ApplicationVersion.unknown;
+        Optional<String> applicationPackageHash = optionalString(object.field(applicationPackageHashField));
         Optional<Long> applicationBuildNumber = optionalLong(object.field(applicationBuildNumberField));
         Optional<SourceRevision> sourceRevision = sourceRevisionFromSlime(object.field(sourceRevisionField));
+        if (applicationPackageHash.isPresent()) { // TODO: Remove after 2018-03-01
+            return sourceRevision.map(sr -> ApplicationVersion.from(applicationPackageHash.get(), sr))
+                                 .orElseGet(() -> ApplicationVersion.from(applicationPackageHash.get()));
+        }
         if (!sourceRevision.isPresent() || !applicationBuildNumber.isPresent()) {
             return ApplicationVersion.unknown;
         }
@@ -369,11 +383,21 @@ public class ApplicationSerializer {
         Change change = Change.empty();
         if (versionFieldValue.valid())
             change = Change.of(Version.fromString(versionFieldValue.asString()));
-        if (object.field(applicationBuildNumberField).valid())
+        if (object.field(applicationBuildNumberField).valid() ||
+            object.field(applicationPackageHashField).valid()) // TODO: Remove after 2018-03-01
             change = change.with(applicationVersionFromSlime(object));
         if ( ! change.isPresent()) // A deploy object with no fields -> unknown application change
-            change = Change.empty();
+            change = Change.of(ApplicationVersion.unknown);
         return change;
+    }
+
+    // TODO: Remove and inline after 2018-03-01
+    private Change outstandingChangeFromSlime(Inspector object) {
+        if (object.type() == Type.BOOL) {
+            boolean outstandingChange = object.asBool();
+            return outstandingChange ? Change.of(ApplicationVersion.unknown) : Change.empty();
+        }
+        return changeFromSlime(object);
     }
 
     private List<JobStatus> jobStatusListFromSlime(Inspector array) {
@@ -401,6 +425,7 @@ public class ApplicationSerializer {
         return Optional.of(new JobStatus.JobRun(optionalLong(object.field(jobRunIdField)).orElse(-1L), // TODO: Make non-optional after November 2017 -- what about lastTriggered?
                                                 new Version(object.field(versionField).asString()),
                                                 applicationVersionFromSlime(object.field(revisionField)),
+                                                object.field(upgradeField).asBool(),
                                                 optionalString(object.field(reasonField)).orElse(""), // TODO: Make non-optional after November 2017
                                                 Instant.ofEpochMilli(object.field(atField).asLong())));
     }

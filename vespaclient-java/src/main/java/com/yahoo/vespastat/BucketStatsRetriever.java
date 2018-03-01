@@ -87,15 +87,15 @@ public class BucketStatsRetriever {
         }
     }
 
-    public String retrieveBucketStats(ClientParameters.SelectionType type, String id, BucketId bucketId, String bucketSpace) throws BucketStatsException {
+    public String retrieveBucketStats(ClientParameters.SelectionType type, String id, BucketId bucketId) throws BucketStatsException {
         String documentSelection = createDocumentSelection(type, id);
-        StatBucketMessage msg = new StatBucketMessage(bucketId, bucketSpace, documentSelection);
+        StatBucketMessage msg = new StatBucketMessage(bucketId, documentSelection);
         StatBucketReply statBucketReply = sendMessage(msg, StatBucketReply.class);
         return statBucketReply.getResults();
     }
 
-    public List<GetBucketListReply.BucketInfo> retrieveBucketList(BucketId bucketId, String bucketSpace) throws BucketStatsException {
-        GetBucketListMessage msg = new GetBucketListMessage(bucketId, bucketSpace);
+    public List<GetBucketListReply.BucketInfo> retrieveBucketList(BucketId bucketId) throws BucketStatsException {
+        GetBucketListMessage msg = new GetBucketListMessage(bucketId);
         GetBucketListReply bucketListReply = sendMessage(msg, GetBucketListReply.class);
         return bucketListReply.getBuckets();
     }

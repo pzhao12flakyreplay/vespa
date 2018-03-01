@@ -3,7 +3,6 @@ package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeRepository;
-import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.node.History;
 
 import java.time.Duration;
@@ -17,6 +16,7 @@ import java.util.List;
  * For this reason, all reserved nodes go through the dirty state before going back to ready.
  *
  * @author bratseth
+ * @version $Id$
  */
 public class ReservationExpirer extends Expirer {
 
@@ -29,6 +29,6 @@ public class ReservationExpirer extends Expirer {
     }
 
     @Override
-    protected void expire(List<Node> expired) { nodeRepository.setDirty(expired, Agent.system, "Expired by ReservationExpirer"); }
+    protected void expire(List<Node> expired) { nodeRepository.setDirty(expired); }
 
 }

@@ -2,7 +2,6 @@
 
 #include "state.h"
 #include <vespa/storageapi/messageapi/storagemessage.h>
-#include <vespa/vdslib/state/clusterstate.h>
 #include <ostream>
 
 namespace storage {
@@ -62,12 +61,6 @@ GetNodeStateReply::print(std::ostream& out, bool verbose,
     }
 }
 
-SetSystemStateCommand::SetSystemStateCommand(const lib::ClusterStateBundle& state)
-    : StorageCommand(MessageType::SETSYSTEMSTATE),
-      _state(state)
-{
-}
-
 SetSystemStateCommand::SetSystemStateCommand(const lib::ClusterState& state)
     : StorageCommand(MessageType::SETSYSTEMSTATE),
       _state(state)
@@ -78,7 +71,7 @@ void
 SetSystemStateCommand::print(std::ostream& out, bool verbose,
                              const std::string& indent) const
 {
-    out << "SetSystemStateCommand(" << *_state.getBaselineClusterState() << ")";
+    out << "SetSystemStateCommand(" << _state << ")";
     if (verbose) {
         out << " : ";
         StorageCommand::print(out, verbose, indent);
@@ -87,7 +80,7 @@ SetSystemStateCommand::print(std::ostream& out, bool verbose,
 
 SetSystemStateReply::SetSystemStateReply(const SetSystemStateCommand& cmd)
     : StorageReply(cmd),
-      _state(cmd.getClusterStateBundle())
+      _state(cmd.getSystemState())
 {
 }
 

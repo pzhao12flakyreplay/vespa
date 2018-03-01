@@ -21,7 +21,7 @@ import static org.junit.Assert.assertTrue;
 import static org.junit.Assert.fail;
 
 /**
- * @author Simon Thoresen
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen</a>
  */
 public class RoutingTestCase {
 
@@ -61,10 +61,12 @@ public class RoutingTestCase {
      * application directory containing the necessary setup files, and call this method with a TRUE create flag.
      *
      * @param application The application directory.
+     * @throws IOException 
      */
     private static void assertApplication(File application) throws IOException {
         assertTrue(application.isDirectory());
         String applicationName = application.getName();
+        System.out.println("Testing route configuration from application '" + applicationName + "'..");
         Map<String, File> files = new HashMap<>();
         for (File file : application.listFiles(new ContentFilter())) {
             files.put(file.getName(), file);
@@ -103,6 +105,7 @@ public class RoutingTestCase {
             }
             assertFileContains(application, files, "errors.txt", msg.toString());
         }
+        System.out.println("\tDone.");
     }
 
     /**
@@ -122,6 +125,7 @@ public class RoutingTestCase {
             fail("Expected file '" + fileName + "' not found.\nExpected content: " + expectedContent);
             return;
         }
+        System.out.println("\tVerifying content of '" + fileName + "'.");
         StringBuilder content = new StringBuilder();
 
         try {
@@ -151,7 +155,7 @@ public class RoutingTestCase {
      */
     private static void assertConfigFileContains(File application, Map<String, File> files,
                                                  String fileName, ConfigInstance config) throws IOException {
-        String configString = config.toString();
+        final String configString = config.toString();
         if (WRITE_FILES) {
             files.put(fileName, writeFile(application, fileName, configString.trim() + "\n"));
         }
@@ -159,6 +163,7 @@ public class RoutingTestCase {
             fail("Expected file '" + fileName + "' not found.");
             return;
         }
+        System.out.println("\tVerifying content of '" + fileName + "'.");
         assertSerializedConfigEquals(IOUtils.readFile(files.get(fileName)), configString);
     }
 
@@ -195,5 +200,4 @@ public class RoutingTestCase {
             return !name.equals(".git") && !name.equals(".svn");
         }
     }
-
 }

@@ -3,29 +3,19 @@ package com.yahoo.vespa.clustercontroller.core;
 
 import com.yahoo.vdslib.distribution.ConfiguredNode;
 import com.yahoo.vdslib.distribution.Distribution;
-import com.yahoo.vdslib.state.ClusterState;
-import com.yahoo.vdslib.state.Node;
-import com.yahoo.vdslib.state.NodeState;
-import com.yahoo.vdslib.state.NodeType;
-import com.yahoo.vdslib.state.State;
+import com.yahoo.vdslib.state.*;
 import com.yahoo.vespa.clustercontroller.core.hostinfo.HostInfo;
 import com.yahoo.vespa.clustercontroller.core.listeners.NodeStateOrHostInfoChangeHandler;
 import com.yahoo.vespa.clustercontroller.core.mocks.TestEventLog;
 import com.yahoo.vespa.clustercontroller.core.testutils.LogFormatter;
-import org.junit.Before;
-import org.junit.Test;
-
+import junit.framework.TestCase;
 
 import java.util.LinkedList;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.logging.Logger;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertTrue;
-
-public class StateChangeHandlerTest {
-
+public class StateChangeHandlerTest extends TestCase {
     private static final Logger log = Logger.getLogger(StateChangeHandlerTest.class.getName());
     private class Config {
         int nodeCount = 3;
@@ -71,7 +61,6 @@ public class StateChangeHandlerTest {
     private TestNodeStateOrHostInfoChangeHandler nodeStateUpdateListener;
     private final ClusterStateGenerator.Params params = new ClusterStateGenerator.Params();
 
-    @Before
     public void setUp() {
         LogFormatter.initializeLogging();
     }
@@ -152,8 +141,7 @@ public class StateChangeHandlerTest {
         assertEquals(0, cluster.getNodeInfo(node).getPrematureCrashCount());
     }
 
-    @Test
-    public void testUnstableNodeInSlobrok() {
+    public void testUnstableNodeInSlobrok() throws Exception {
         initialize(new Config());
         startWithStableStateClusterWithNodesUp();
         Node node = new Node(NodeType.STORAGE, 0);
@@ -181,5 +169,4 @@ public class StateChangeHandlerTest {
             verifyPrematureCrashCountCleared(node);
         }
     }
-
 }

@@ -34,7 +34,7 @@ public class RankProfileTypeSettingsProcessor extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         processAttributeFields();
         processImportedFields();
         processQueryProfileTypes();

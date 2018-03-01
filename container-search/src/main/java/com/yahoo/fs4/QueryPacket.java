@@ -123,7 +123,7 @@ public class QueryPacket extends Packet {
         ignoreableOffset = buffer.position() - relativeZero;
         IntegerCompressor.putCompressedPositiveNumber(getOffset(), buffer);
         IntegerCompressor.putCompressedPositiveNumber(getHits(), buffer);
-        buffer.putInt(Math.max(1, (int)query.getTimeLeft())); // Safety to avoid sending down 0 or negative number
+        buffer.putInt((int)query.getTimeLeft());
         ignoreableSize = buffer.position() - relativeZero - ignoreableOffset;
         buffer.putInt(getFlagInt());
         int startOfFieldToSave = buffer.position();
@@ -217,7 +217,6 @@ public class QueryPacket extends Packet {
      * query flag bits, taken from searchlib/common/transport.h
      **/
     static final int QFLAG_EXTENDED_COVERAGE    = 0x00000001;
-    static final int QFLAG_COVERAGE_NODES       = 0x00000002;
     static final int QFLAG_ESTIMATE             = 0x00000080;
     static final int QFLAG_DROP_SORTDATA        = 0x00004000;
     static final int QFLAG_NO_RESULTCACHE       = 0x00010000;
@@ -251,7 +250,7 @@ public class QueryPacket extends Packet {
     }
 
     static int getQueryFlags(Query query) {
-        int flags = QFLAG_EXTENDED_COVERAGE | QFLAG_COVERAGE_NODES;
+        int flags = QFLAG_EXTENDED_COVERAGE;
 
         flags |= query.properties().getBoolean(com.yahoo.search.query.Model.ESTIMATE) ? QFLAG_ESTIMATE : 0;
         flags |= query.getNoCache() ? QFLAG_NO_RESULTCACHE : 0;

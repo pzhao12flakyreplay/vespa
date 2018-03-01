@@ -737,11 +737,11 @@ addStatisticsForNonIdealNodes(const StateChecker::Context& c,
     for (uint32_t j = 0; j < c.entry->getNodeCount(); ++j) {
         const uint16_t node(c.entry->getNodeRef(j).getNode());
         if (!presentInIdealState(c, node)) {
-            c.stats.incMovingOut(node, c.getBucketSpace());
+            c.stats.incMovingOut(node);
         } else if (missingReplica) {
             // Copy is in ideal location and we're missing a replica. Thus
             // we treat all ideal copies as sources to copy from.
-            c.stats.incCopyingOut(node, c.getBucketSpace());
+            c.stats.incCopyingOut(node);
         }
     }
 }
@@ -773,7 +773,7 @@ checkForNodesMissingFromIdealState(StateChecker::Context& c)
                     ret.markMoveToIdealLocation(c.idealState[i],
                                                 mp.mergeMoveToIdealNode);
                 }
-                c.stats.incCopyingIn(c.idealState[i], c.getBucketSpace());
+                c.stats.incCopyingIn(c.idealState[i]);
                 hasMissingReplica = true;
             }
         }
@@ -788,7 +788,7 @@ addStatisticsForOutOfSyncCopies(StateChecker::Context& c)
     const uint32_t n = c.entry->getNodeCount();
     for (uint32_t i = 0; i < n; ++i) {
         const BucketCopy& cp(c.entry->getNodeRef(i));
-        c.stats.incSyncing(cp.getNode(), c.getBucketSpace());
+        c.stats.incSyncing(cp.getNode());
     }
 }
 

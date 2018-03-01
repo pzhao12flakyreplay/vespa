@@ -145,14 +145,6 @@ public class DocumentRouteSelectorPolicy
         case DocumentProtocol.MESSAGE_UPDATEDOCUMENT:
             return selector.accepts(((UpdateDocumentMessage)msg).getDocumentUpdate()) != Result.FALSE;
 
-        case DocumentProtocol.MESSAGE_REMOVEDOCUMENT: {
-            RemoveDocumentMessage removeMsg = (RemoveDocumentMessage)msg;
-            if (removeMsg.getDocumentId().hasDocType()) {
-                return selector.accepts(removeMsg.getDocumentRemove()) != Result.FALSE;
-            } else {
-                return true;
-            }
-        }
 
         case DocumentProtocol.MESSAGE_BATCHDOCUMENTUPDATE:
             BatchDocumentUpdateMessage bdu = (BatchDocumentUpdateMessage)msg;

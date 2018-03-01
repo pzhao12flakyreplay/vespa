@@ -166,7 +166,6 @@ public:
 
     BucketDatabase::Entry getBucket(const document::BucketId& bId) const;
 
-    std::vector<document::BucketSpace> getBucketSpaces() const;
 protected:
     vdstestlib::DirConfig _config;
     std::unique_ptr<TestDistributorApp> _node;
@@ -191,8 +190,6 @@ protected:
         }
     };
     MessageSenderImpl _messageSender;
-
-    void enableDistributorClusterState(vespalib::stringref state);
 };
 
 }

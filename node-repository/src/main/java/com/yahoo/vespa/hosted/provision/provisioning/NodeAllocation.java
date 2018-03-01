@@ -213,23 +213,23 @@ class NodeAllocation {
      * @return the final list of nodes
      */
     List<Node> finalNodes(List<Node> surplusNodes) {
-        int currentRetiredCount = (int) nodes.stream().filter(node -> node.node.allocation().get().membership().retired()).count();
-        int deltaRetiredCount = requestedNodes.idealRetiredCount(nodes.size(), currentRetiredCount) - currentRetiredCount;
+        long currentRetired = nodes.stream().filter(node -> node.node.allocation().get().membership().retired()).count();
+        long surplus = requestedNodes.surplusGiven(nodes.size()) - currentRetired;
 
-        if (deltaRetiredCount > 0) { // retire until deltaRetiredCount is 0, prefer to retire higher indexes to minimize redistribution
+        if (surplus > 0) { // retire until surplus is 0, prefer to retire higher indexes to minimize redistribution
             for (PrioritizableNode node : byDecreasingIndex(nodes)) {
                 if ( ! node.node.allocation().get().membership().retired() && node.node.state().equals(Node.State.active)) {
                     node.node = node.node.retire(Agent.application, clock.instant());
                     surplusNodes.add(node.node); // offer this node to other groups
-                    if (--deltaRetiredCount == 0) break;
+                    if (--surplus == 0) break;
                 }
             }
         }
-        else if (deltaRetiredCount < 0) { // unretire until deltaRetiredCount is 0
+        else if (surplus < 0) { // unretire until surplus is 0
             for (PrioritizableNode node : byIncreasingIndex(nodes)) {
                 if ( node.node.allocation().get().membership().retired() && hasCompatibleFlavor(node.node)) {
                     node.node = node.node.unretire();
-                    if (++deltaRetiredCount == 0) break;
+                    if (++surplus == 0) break;
                 }
             }
         }
@@ -243,25 +243,24 @@ class NodeAllocation {
         return nodes.stream().map(n -> n.node).collect(Collectors.toList());
     }
 
-    List<Node> reservableNodes() {
+    List<Node> acceptedInactiveAndReadyNodes() {
         return nodes.stream().map(n -> n.node)
-                    .filter(n -> n.state() == Node.State.inactive ||
-                                 n.state() == Node.State.ready)
-                    .collect(Collectors.toList());
+                .filter(n -> n.state().equals(Node.State.inactive) || n.state().equals(Node.State.ready))
+                .collect(Collectors.toList());
     }
 
-    List<Node> surplusNodes() {
+    List<Node> acceptedSurplusNodes() {
         return nodes.stream()
-                    .filter(n -> n.isSurplusNode)
-                    .map(n -> n.node)
-                    .collect(Collectors.toList());
+                .filter(n -> n.isSurplusNode)
+                .map(n -> n.node)
+                .collect(Collectors.toList());
     }
 
-    List<Node> newNodes() {
+    List<Node> acceptedNewNodes() {
         return nodes.stream()
-                    .filter(n -> n.isNewNode)
-                    .map(n -> n.node)
-                    .collect(Collectors.toList());
+                .filter(n -> n.isNewNode)
+                .map(n -> n.node)
+                .collect(Collectors.toList());
     }
 
     private List<PrioritizableNode> byDecreasingIndex(Set<PrioritizableNode> nodes) {

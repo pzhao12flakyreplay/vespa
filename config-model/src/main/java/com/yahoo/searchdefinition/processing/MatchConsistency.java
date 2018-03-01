@@ -22,28 +22,23 @@ import java.util.Map;
  */
 public class MatchConsistency extends Processor {
 
-    public MatchConsistency(Search search,
-                            DeployLogger deployLogger,
-                            RankProfileRegistry rankProfileRegistry,
-                            QueryProfiles queryProfiles) {
+    public MatchConsistency(Search search, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
         super(search, deployLogger, rankProfileRegistry, queryProfiles);
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         Map<String, Matching.Type> types = new HashMap<>();
         for (SDField field : search.allConcreteFields()) {
             new MyVisitor(search, field, types).visit(field.getIndexingScript());
         }
     }
 
-    private void checkMatching(Search search, SDField field, Map<String, Type> types, String indexTo) {
+    void checkMatching(Search search, SDField field, Map<String, Type> types, String indexTo) {
         Type prevType = types.get(indexTo);
         if (prevType == null) {
             types.put(indexTo, field.getMatching().getType());
-        } else if ( ! field.getMatching().getType().equals(prevType)) {
+        } else if (!field.getMatching().getType().equals(prevType)) {
             warn(search, field, "The matching type for index '" + indexTo + "' (got " + field.getMatching().getType() +
                                 ") is inconsistent with that given for the same index in a previous field (had " +
                                 prevType + ").");
@@ -56,7 +51,7 @@ public class MatchConsistency extends Processor {
         final SDField field;
         final Map<String, Type> types;
 
-        MyVisitor(Search search, SDField field, Map<String, Type> types) {
+        public MyVisitor(Search search, SDField field, Map<String, Type> types) {
             this.search = search;
             this.field = field;
             this.types = types;
@@ -69,5 +64,4 @@ public class MatchConsistency extends Processor {
             }
         }
     }
-
 }

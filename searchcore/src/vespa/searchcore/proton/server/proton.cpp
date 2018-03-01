@@ -165,7 +165,7 @@ Proton::Proton(const config::ConfigUri & configUri,
       _configUri(configUri),
       _mutex(),
       _metricsHook(*this),
-      _metricsEngine(std::make_unique<MetricsEngine>()),
+      _metricsEngine(),
       _fileHeaderContext(*this, progName),
       _tls(),
       _diskMemUsageSampler(),
@@ -235,9 +235,10 @@ Proton::init(const BootstrapConfig::SP & configSnapshot)
                            (protonConfig.basedir,
                             diskMemUsageSamplerConfig(protonConfig, hwInfo));
 
-    _tls = std::make_unique<TLS>(_configUri.createWithNewId(protonConfig.tlsconfigid), _fileHeaderContext);
+    _metricsEngine.reset(new MetricsEngine());
     _metricsEngine->addMetricsHook(_metricsHook);
     _fileHeaderContext.setClusterName(protonConfig.clustername, protonConfig.basedir);
+    _tls.reset(new TLS(_configUri.createWithNewId(protonConfig.tlsconfigid), _fileHeaderContext));
     _matchEngine.reset(new MatchEngine(protonConfig.numsearcherthreads,
                                        protonConfig.numthreadspersearch,
                                        protonConfig.distributionkey));
@@ -686,11 +687,7 @@ Proton::updateMetrics(const vespalib::MonitorGuard &)
 {
     {
         ContentProtonMetrics &metrics = _metricsEngine->root();
-        auto tls = _tls->getTransLogServer();
-        if (tls) {
-            metrics.transactionLog.update(tls->getDomainStats());
-        }
-
+        metrics.transactionLog.update(_tls->getTransLogServer()->getDomainStats());
         const DiskMemUsageFilter &usageFilter = _diskMemUsageSampler->writeFilter();
         DiskMemUsageState usageState = usageFilter.usageState();
         metrics.resourceUsage.disk.set(usageState.diskState().usage());
@@ -704,15 +701,9 @@ Proton::updateMetrics(const vespalib::MonitorGuard &)
     {
         LegacyProtonMetrics &metrics = _metricsEngine->legacyRoot();
         metrics.executor.update(_executor.getStats());
-        if (_flushEngine) {
-            metrics.flushExecutor.update(_flushEngine->getExecutorStats());
-        }
-        if (_matchEngine) {
-            metrics.matchExecutor.update(_matchEngine->getExecutorStats());
-        }
-        if (_summaryEngine) {
-            metrics.summaryExecutor.update(_summaryEngine->getExecutorStats());
-        }
+        metrics.flushExecutor.update(_flushEngine->getExecutorStats());
+        metrics.matchExecutor.update(_matchEngine->getExecutorStats());
+        metrics.summaryExecutor.update(_summaryEngine->getExecutorStats());
     }
 }
 

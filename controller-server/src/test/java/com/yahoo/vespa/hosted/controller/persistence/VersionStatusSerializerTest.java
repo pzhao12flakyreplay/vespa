@@ -44,7 +44,7 @@ public class VersionStatusSerializerTest {
             VespaVersion a = status.versions().get(i);
             VespaVersion b = deserialized.versions().get(i);
             assertEquals(a.releaseCommit(), b.releaseCommit());
-            assertEquals(a.committedAt(), b.committedAt());
+            assertEquals(a.releasedAt(), b.releasedAt());
             assertEquals(a.isCurrentSystemVersion(), b.isCurrentSystemVersion());
             assertEquals(a.statistics(), b.statistics());
             assertEquals(a.configServerHostnames(), b.configServerHostnames());

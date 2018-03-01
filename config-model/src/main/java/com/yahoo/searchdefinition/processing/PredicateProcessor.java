@@ -33,26 +33,26 @@ public class PredicateProcessor extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             if (field.getDataType() == DataType.PREDICATE) {
-                if (validate && field.doesIndexing()) {
+                if (field.doesIndexing()) {
                     fail(search, field, "Use 'attribute' instead of 'index'. This will require a refeed if you have upgraded.");
                 }
                 if (field.doesAttributing()) {
                     Attribute attribute = field.getAttributes().get(field.getName());
                     for (Index index : field.getIndices().values()) {
                         BooleanIndexDefinition booleanDefinition = index.getBooleanIndexDefiniton();
-                        if (validate && (booleanDefinition == null ||  ! booleanDefinition.hasArity())) {
+                        if (booleanDefinition == null || !booleanDefinition.hasArity()) {
                             fail(search, field, "Missing arity value in predicate field.");
                         }
-                        if (validate && (booleanDefinition.getArity() < 2)) {
+                        if (booleanDefinition.getArity() < 2) {
                             fail(search, field, "Invalid arity value in predicate field, must be greater than 1.");
                         }
                         double threshold = booleanDefinition.getDensePostingListThreshold();
-                        if (validate && (threshold <= 0 || threshold > 1)) {
+                        if (threshold <= 0 || threshold > 1) {
                             fail(search, field, "Invalid dense-posting-list-threshold value in predicate field. " +
-                                                "Value must be in range (0..1].");
+                                    "Value must be in range (0..1].");
                         }
 
                         attribute.setArity(booleanDefinition.getArity());
@@ -70,11 +70,11 @@ public class PredicateProcessor extends Processor {
                         summaryField.setTransform(SummaryTransform.NONE);
                     }
                 }
-            } else if (validate && field.getDataType().getPrimitiveType() == DataType.PREDICATE) {
+            } else if (field.getDataType().getPrimitiveType() == DataType.PREDICATE) {
                 fail(search, field, "Collections of predicates are not allowed.");
-            } else if (validate && field.getDataType() == DataType.RAW && field.doesIndexing()) {
+            } else if (field.getDataType() == DataType.RAW && field.doesIndexing()) {
                 fail(search, field, "Indexing of RAW fields is not supported.");
-            } else if (validate) {
+            } else {
                 // if field is not a predicate, disallow predicate-related index parameters
                 for (Index index : field.getIndices().values()) {
                     if (index.getBooleanIndexDefiniton() != null) {
@@ -94,8 +94,9 @@ public class PredicateProcessor extends Processor {
 
     private void addPredicateOptimizationIlScript(SDField field, BooleanIndexDefinition booleanIndexDefiniton) {
         Expression script = field.getIndexingScript();
-        if (script == null) return;
-
+        if (script == null) {
+            return;
+        }
         script = new StatementExpression(makeSetPredicateVariablesScript(booleanIndexDefiniton), script);
 
         ExpressionConverter converter = new PredicateOutputTransformer(search);
@@ -132,7 +133,6 @@ public class PredicateProcessor extends Processor {
         protected Expression newTransform(DataType fieldType) {
             return new OptimizePredicateExpression();
         }
-
     }
 
 }

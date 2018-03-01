@@ -22,8 +22,7 @@ public class Bolding extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             for (SummaryField summary : field.getSummaryFields()) {
                 if (summary.getTransform().isBolded() &&

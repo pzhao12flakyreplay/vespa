@@ -6,8 +6,7 @@ import com.yahoo.vespa.indexinglanguage.expressions.StatementExpression;
 
 /**
  * Inserts a "newTransform()" before expressions that "requiresTransform()"
- *
- * @author Simon Thoresen
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen</a>
  */
 public abstract class ValueTransformProvider extends ExpressionConverter {
 
@@ -38,7 +37,7 @@ public abstract class ValueTransformProvider extends ExpressionConverter {
             transformed = false;
             return false;
         }
-        if ( ! requiresTransform(exp)) {
+        if (!requiresTransform(exp)) {
             return false;
         }
         if (transformed) {

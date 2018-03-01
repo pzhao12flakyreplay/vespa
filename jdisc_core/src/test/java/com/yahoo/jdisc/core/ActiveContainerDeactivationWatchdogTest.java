@@ -33,9 +33,7 @@ public class ActiveContainerDeactivationWatchdogTest {
         TestDriver driver = TestDriver.newSimpleApplicationInstanceWithoutOsgi();
         ManualClock clock = new ManualClock(Instant.now());
         ActiveContainerDeactivationWatchdog watchdog =
-                new ActiveContainerDeactivationWatchdog(clock,
-                                                        Executors.newScheduledThreadPool(1),
-                                                        ActiveContainerDeactivationWatchdog.DEFAULT_DEACTIVATED_CONTAINERS_BEFORE_GC_THRESHOLD);
+                new ActiveContainerDeactivationWatchdog(clock, Executors.newScheduledThreadPool(1));
         MockMetric metric = new MockMetric();
 
         ActiveContainer containerWithoutRetainedResources = new ActiveContainer(driver.newContainerBuilder());
@@ -75,22 +73,20 @@ public class ActiveContainerDeactivationWatchdogTest {
             "This is the case on most JVMs.")
     public void deactivated_container_destructed_if_its_reference_counter_is_nonzero() {
         ExecutorMock executor = new ExecutorMock();
-        ManualClock clock = new ManualClock(Instant.now());
         ActiveContainerDeactivationWatchdog watchdog =
-                new ActiveContainerDeactivationWatchdog(clock, executor, /*deactivatedContainersBeforeGcThreshold*/0);
+                new ActiveContainerDeactivationWatchdog(new ManualClock(), executor);
         ActiveContainer container =
                 new ActiveContainer(TestDriver.newSimpleApplicationInstanceWithoutOsgi().newContainerBuilder());
         AtomicBoolean destructed = new AtomicBoolean(false);
         container.shutdown().notifyTermination(() -> destructed.set(true));
 
-        container.refer(); // increase reference counter to simulate a leaking resource
+        container.refer(); // increase reference counter to simluate a leaking resource
         watchdog.onContainerActivation(container);
         container.release(); // release resource
-        watchdog.onContainerActivation(null); // deactivate container
+        watchdog.onContainerActivation(null); // deactive container
 
         WeakReference<ActiveContainer> containerWeakReference = new WeakReference<>(container);
         container = null; // make container instance collectable by GC
-        clock.advance(ActiveContainerDeactivationWatchdog.ACTIVE_CONTAINER_GRACE_PERIOD.plusSeconds(1));
 
         executor.triggerGcCommand.run();
 

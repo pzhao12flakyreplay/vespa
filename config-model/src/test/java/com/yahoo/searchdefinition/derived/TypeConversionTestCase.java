@@ -32,7 +32,7 @@ public class TypeConversionTestCase extends SearchDefinitionTestCase {
         a.parseIndexingScript("{ index }");
         document.addField(a);
 
-        Processing.process(search, new BaseDeployLogger(), rankProfileRegistry, new QueryProfiles(), true);
+        Processing.process(search, new BaseDeployLogger(), rankProfileRegistry, new QueryProfiles());
         DerivedConfiguration derived = new DerivedConfiguration(search, rankProfileRegistry, new QueryProfileRegistry());
         IndexInfo indexInfo = derived.getIndexInfo();
         assertFalse(indexInfo.hasCommand("default", "compact-to-term"));

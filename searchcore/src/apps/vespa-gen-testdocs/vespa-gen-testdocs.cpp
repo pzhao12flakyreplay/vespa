@@ -16,6 +16,7 @@
 LOG_SETUP("vespa-gen-testdocs");
 
 typedef vespalib::hash_set<vespalib::string> StringSet;
+typedef vespalib::hash_set<uint32_t> UIntSet;
 typedef std::vector<vespalib::string> StringArray;
 typedef std::shared_ptr<StringArray> StringArraySP;
 using namespace vespalib::alloc;
@@ -40,22 +41,6 @@ prependBaseDir(const string &baseDir,
     return baseDir + "/" + file;
 }
 
-std::vector<string>
-splitArg(const string &arg)
-{
-    std::vector<string> argv;
-    string::size_type pos = 0;
-    for (;;) {
-        auto found = arg.find(',', pos);
-        if (found == string::npos) {
-            break;
-        }
-        argv.emplace_back(arg.substr(pos, found - pos));
-        pos = found + 1;
-    }
-    argv.emplace_back(arg.substr(pos, string::npos));
-    return argv;
-}
 
 void
 shafile(const string &baseDir,
@@ -164,12 +149,26 @@ protected:
 
 public:
     FieldGenerator(const string &name);
-    virtual ~FieldGenerator();
-    virtual void setup();
-    virtual void generateXML(vespalib::asciistream &doc, uint32_t id);
-    virtual void generateJSON(vespalib::asciistream &doc, uint32_t id);
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id);
-    virtual bool isString() const { return true; }
+
+    virtual
+    ~FieldGenerator();
+
+    virtual void
+    setup();
+
+    virtual void
+    clear();
+
+    virtual void
+    deleteHistogram(const string &baseDir,
+                    const string &name);
+
+    virtual void
+    writeHistogram(const string &baseDir,
+                   const string &name);
+
+    virtual void
+    generate(vespalib::asciistream &doc, uint32_t id) = 0;
 };
 
 
@@ -183,109 +182,45 @@ FieldGenerator::~FieldGenerator()
 {
 }
 
+
 void
 FieldGenerator::setup()
 {
 }
 
-void
-FieldGenerator::generateXML(vespalib::asciistream &doc, uint32_t id)
-{
-    doc << "  <" << _name << ">";
-    generateValue(doc, id);
-    doc << "</" << _name << ">\n";
-}
 
 void
-FieldGenerator::generateJSON(vespalib::asciistream &doc, uint32_t id)
+FieldGenerator::clear()
 {
-    doc << "\"" << _name << "\": ";
-    bool needQuote = isString();
-    if (needQuote) {
-        doc << "\"";
-    }
-    generateValue(doc, id);
-    if (needQuote) {
-        doc << "\"";
-    }
 }
+
 
 void
-FieldGenerator::generateValue(vespalib::asciistream &, uint32_t)
+FieldGenerator::deleteHistogram(const string &baseDir,
+                                const string &name)
 {
+    (void) baseDir;
+    (void) name;
 }
 
-class ConstTextFieldGenerator : public FieldGenerator
-{
-    string _value;
-public:
-    ConstTextFieldGenerator(std::vector<string> argv);
-    virtual ~ConstTextFieldGenerator() override;
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
-};
-
-ConstTextFieldGenerator::ConstTextFieldGenerator(std::vector<string> argv)
-    : FieldGenerator(argv[0]),
-      _value()
-{
-    if (argv.size() > 1) {
-        _value = argv[1];
-    }
-}
-
-ConstTextFieldGenerator::~ConstTextFieldGenerator() = default;
 
 void
-ConstTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t)
+FieldGenerator::writeHistogram(const string &baseDir,
+                               const string &name)
 {
-    doc << _value;
+    (void) baseDir;
+    (void) name;
 }
 
-class PrefixTextFieldGenerator : public FieldGenerator
-{
-    string _prefix;
-    uint32_t _mod;
-    uint32_t _div;
-public:
-    PrefixTextFieldGenerator(std::vector<string> argv);
-    virtual ~PrefixTextFieldGenerator() override;
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
-};
-
-PrefixTextFieldGenerator::PrefixTextFieldGenerator(std::vector<string> argv)
-    : FieldGenerator(argv[0]),
-      _prefix(),
-      _mod(std::numeric_limits<uint32_t>::max()),
-      _div(1u)
-{
-    if (argv.size() > 1) {
-        _prefix = argv[1];
-        if (argv.size() > 2) {
-            if (!argv[2].empty()) {
-                _mod = atol(argv[2].c_str());
-            }
-            if (argv.size() > 3) {
-                if (!argv[3].empty()) {
-                    _div = atol(argv[3].c_str());
-                }
-            }
-        }
-    }
-}
-
-PrefixTextFieldGenerator::~PrefixTextFieldGenerator() = default;
-
-void
-PrefixTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t id)
-{
-    doc << _prefix << ((id / _div) % _mod);
-}
 
 class RandTextFieldGenerator : public FieldGenerator
 {
     search::Rand48 &_rnd;
     uint32_t _numWords;
     StringArray _strings;
+    std::vector<uint32_t> _histogram;
+    UIntSet _wnums;
+    uint32_t _colls;
     uint32_t _minFill;
     uint32_t _randFill;
 
@@ -295,9 +230,24 @@ public:
                            uint32_t numWords,
                            uint32_t minFill,
                            uint32_t maxFill);
-    virtual ~RandTextFieldGenerator();
-    virtual void setup() override;
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
+
+    virtual
+    ~RandTextFieldGenerator();
+
+    virtual void
+    setup() override;
+
+    virtual void
+    clear() override;
+
+    virtual void
+    deleteHistogram(const string &baseDir, const string &name) override;
+
+    virtual void
+    writeHistogram(const string &baseDir, const string &name) override;
+
+    virtual void
+    generate(vespalib::asciistream &doc, uint32_t id) override;
 };
 
 
@@ -310,6 +260,9 @@ RandTextFieldGenerator::RandTextFieldGenerator(const string &name,
       _rnd(rnd),
       _numWords(numWords),
       _strings(),
+      _histogram(),
+      _wnums(),
+      _colls(0u),
       _minFill(minFill),
       _randFill(randFill)
 {
@@ -329,12 +282,60 @@ RandTextFieldGenerator::setup()
         "generating dictionary for field %s (%u words)",
         _name.c_str(), _numWords);
     StringGenerator(_rnd).rand_unique_array(_strings, 5, 10, _numWords);
+    _histogram.resize(_numWords);
 }
 
 
 void
-RandTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t)
+RandTextFieldGenerator::clear()
 {
+    typedef std::vector<uint32_t>::iterator HI;
+    for (HI i(_histogram.begin()), ie(_histogram.end()); i != ie; ++i) {
+        *i = 0;
+    }
+    _colls = 0;
+}
+
+
+void
+RandTextFieldGenerator::deleteHistogram(const string &baseDir,
+                                        const string &name)
+{
+    string fname(prependBaseDir(baseDir, name) + "-" + _name);
+    FastOS_File::Delete(fname.c_str());
+}
+
+
+void
+RandTextFieldGenerator::writeHistogram(const string &baseDir,
+                                       const string &name)
+{
+    LOG(info, "%u word collisions for field %s", _colls, _name.c_str());
+    string fname(name + "-" + _name);
+    string fullName(prependBaseDir(baseDir, fname));
+    LOG(info, "Writing histogram %s", fname.c_str());
+    Fast_BufferedFile f(new FastOS_File);
+    f.WriteOpen(fullName.c_str());
+    uint32_t numWords = _strings.size();
+    assert(numWords == _histogram.size());
+    for (uint32_t wNum = 0; wNum < numWords; ++wNum) {
+        f.WriteString(_strings[wNum].c_str());
+        f.WriteString(" ");
+        f.addNum(_histogram[wNum], 0, ' ');
+        f.WriteString("\n");
+    }
+    f.Flush();
+    f.Close();
+    shafile(baseDir, fname);
+}
+
+
+void
+RandTextFieldGenerator::generate(vespalib::asciistream &doc, uint32_t id)
+{
+    (void) id;
+    doc << "  <" << _name << ">";
+    _wnums.clear();
     uint32_t gLen = _minFill + _rnd.lrand48() % (_randFill + 1);
     bool first = true;
     for (uint32_t i = 0; i < gLen; ++i) {
@@ -342,11 +343,17 @@ RandTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t)
             doc << " ";
         first = false;
         uint32_t wNum = _rnd.lrand48() % _strings.size();
+        if (_wnums.insert(wNum).second)
+            _histogram[wNum]++;
+        else
+            ++_colls;
         const string &s(_strings[wNum]);
         assert(s.size() > 0);
         doc << s;
     }
+    doc << "</" << _name << ">\n";
 }
+
 
 class ModTextFieldGenerator : public FieldGenerator
 {
@@ -357,8 +364,18 @@ public:
     ModTextFieldGenerator(const string &name,
                           search::Rand48 &rnd,
                           const std::vector<uint32_t> &mods);
-    virtual ~ModTextFieldGenerator();
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
+    
+    virtual
+    ~ModTextFieldGenerator();
+
+    virtual void
+    clear() override;
+
+    virtual void
+    writeHistogram(const string &name);
+
+    virtual void
+    generate(vespalib::asciistream &doc, uint32_t id) override;
 };
 
 
@@ -378,9 +395,23 @@ ModTextFieldGenerator::~ModTextFieldGenerator()
 
 
 void
-ModTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t id)
+ModTextFieldGenerator::clear()
+{
+}
+
+
+void
+ModTextFieldGenerator::writeHistogram(const string &name)
+{
+    (void) name;
+}
+
+
+void
+ModTextFieldGenerator::generate(vespalib::asciistream &doc, uint32_t id)
 {
     typedef std::vector<uint32_t>::const_iterator MI;
+    doc << "  <" << _name << ">";
     bool first = true;
     for (MI mi(_mods.begin()), me(_mods.end()); mi != me; ++mi) {
         uint32_t m = *mi;
@@ -389,6 +420,7 @@ ModTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t id)
         first = false;
         doc << "w" << m << "w" << (id % m);
     }
+    doc << "</" << _name << ">\n";
 }
 
 
@@ -396,8 +428,18 @@ class IdTextFieldGenerator : public FieldGenerator
 {
 public:
     IdTextFieldGenerator(const string &name);
-    virtual ~IdTextFieldGenerator();
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
+    
+    virtual
+    ~IdTextFieldGenerator();
+
+    virtual void
+    clear() override;
+
+    virtual void
+    writeHistogram(const string &name);
+
+    virtual void
+    generate(vespalib::asciistream &doc, uint32_t id) override;
 };
 
 
@@ -413,9 +455,24 @@ IdTextFieldGenerator::~IdTextFieldGenerator()
 
 
 void
-IdTextFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t id)
+IdTextFieldGenerator::clear()
 {
+}
+
+
+void
+IdTextFieldGenerator::writeHistogram(const string &name)
+{
+    (void) name;
+}
+
+
+void
+IdTextFieldGenerator::generate(vespalib::asciistream &doc, uint32_t id)
+{
+    doc << "  <" << _name << ">";
     doc << id;
+    doc << "</" << _name << ">\n";
 }
 
 
@@ -430,9 +487,18 @@ public:
                           search::Rand48 &rnd,
                           uint32_t low,
                           uint32_t count);
-    virtual ~RandIntFieldGenerator();
-    virtual void generateValue(vespalib::asciistream &doc, uint32_t id) override;
-    virtual bool isString() const override { return false; }
+    
+    virtual
+    ~RandIntFieldGenerator();
+
+    virtual void
+    clear() override;
+
+    virtual void
+    writeHistogram(const string &name);
+
+    virtual void
+    generate(vespalib::asciistream &doc, uint32_t id) override;
 };
 
 
@@ -455,10 +521,26 @@ RandIntFieldGenerator::~RandIntFieldGenerator()
 
 
 void
-RandIntFieldGenerator::generateValue(vespalib::asciistream &doc, uint32_t)
+RandIntFieldGenerator::clear()
 {
+}
+
+
+void
+RandIntFieldGenerator::writeHistogram(const string &name)
+{
+    (void) name;
+}
+
+
+void
+RandIntFieldGenerator::generate(vespalib::asciistream &doc, uint32_t id)
+{
+    (void) id;
+    doc << "  <" << _name << ">";
     uint32_t r = _low + _rnd.lrand48() % _count;
     doc << r;
+    doc << "</" << _name << ">\n";
 }
 
 class DocumentGenerator
@@ -475,13 +557,28 @@ public:
     DocumentGenerator(const string &docType,
                       const string &idPrefix,
                       const FieldVec &fields);
+
     ~DocumentGenerator();
-    void generateXML(uint32_t id);
-    void generateJSON(uint32_t id);
-    void generate(uint32_t docMin, uint32_t docIdLimit,
-                  const string &baseDir,
-                  const string &feedFileName,
-                  bool headers, bool json);
+
+    void
+    clear();
+
+    void
+    deleteHistogram(const string &baseDir,
+                    const string &name);
+
+    void
+    writeHistogram(const string &baseDir,
+                   const string &name);
+
+    void
+    generate(uint32_t id);
+
+    void
+    generate(uint32_t docMin, uint32_t docCount,
+             const string &baseDir,
+             const string &feedFileName,
+             bool headers);
 };
 
 
@@ -512,73 +609,79 @@ DocumentGenerator::setup()
 
 
 void
-DocumentGenerator::generateXML(uint32_t id)
+DocumentGenerator::clear()
+{
+    typedef FieldVec::const_iterator FI;
+    for (FI i(_fields.begin()), ie(_fields.end()); i != ie; ++i) {
+        (*i)->clear();
+    }
+}
+
+
+void
+DocumentGenerator::generate(uint32_t id)
 {
     _doc.clear();
-    _doc << "<document documenttype=\"" << _docType << "\" documentid=\"" <<
+    _doc << "<document documenttype=\"" << _docType << "\" documentid= \"" <<
         _idPrefix << id << "\">\n";
-    for (const auto &field : _fields) {
-        field->generateXML(_doc, id);
+    typedef FieldVec::const_iterator FI;
+    for (FI i(_fields.begin()), ie(_fields.end()); i != ie; ++i) {
+        (*i)->generate(_doc, id);
     }
     _doc << "</document>\n";
 }
 
-void
-DocumentGenerator::generateJSON(uint32_t id)
-{
-    _doc.clear();
-    _doc << "  { \"put\": \"" << _idPrefix << id << "\",\n    \"fields\": {";
-    bool first = true;
-    for (const auto &field : _fields) {
-        if (!first) {
-            _doc << ",";
-        }
-        first = false;
-        _doc << "\n      ";
-        field->generateJSON(_doc, id);
-    }
-    _doc << "\n    }\n  }";
-}
 
 void
-DocumentGenerator::generate(uint32_t docMin, uint32_t docIdLimit,
+DocumentGenerator::deleteHistogram(const string &baseDir,
+                                   const string &name)
+{
+    typedef FieldVec::const_iterator FI;
+    for (FI i(_fields.begin()), ie(_fields.end()); i != ie; ++i) {
+        (*i)->deleteHistogram(baseDir, name);
+    }
+}
+                            
+void
+DocumentGenerator::writeHistogram(const string &baseDir,
+                                  const string &name)
+{
+    typedef FieldVec::const_iterator FI;
+    for (FI i(_fields.begin()), ie(_fields.end()); i != ie; ++i) {
+        (*i)->writeHistogram(baseDir, name);
+    }
+}
+                            
+void
+DocumentGenerator::generate(uint32_t docMin, uint32_t docCount,
                             const string &baseDir,
                             const string &feedFileName,
-                            bool headers, bool json)
+                            bool headers)
 {
     string fullName(prependBaseDir(baseDir, feedFileName));
     FastOS_File::Delete(fullName.c_str());
+    string histname(feedFileName + ".histogram");
+    deleteHistogram(baseDir, histname);
     Fast_BufferedFile f(new FastOS_File);
     f.WriteOpen(fullName.c_str());
-    if (json) {
-        bool first = true;
-        f.WriteString("[\n");
-        for (uint32_t id = docMin; id < docIdLimit; ++id) {
-            if (!first) {
-                f.WriteString(",\n");
-            }
-            first = false;
-            generateJSON(id);
-            f.WriteBuf(_doc.c_str(), _doc.size());
-        }
-        f.WriteString("\n]\n");
-    } else {
-        if (headers) {
-            f.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n");
-            f.WriteString("<vespafeed>\n");
-        }
-        for (uint32_t id = docMin; id < docIdLimit; ++id) {
-            generateXML(id);
-            f.WriteBuf(_doc.c_str(), _doc.size());
-        }
-        if (headers) {
-            f.WriteString("</vespafeed>\n");
-        }
+    clear();
+    if (headers) {
+        f.WriteString("<?xml version=\"1.0\" encoding=\"utf-8\" ?>\n");
+        f.WriteString("<vespafeed>\n");
+    }
+    uint32_t docLim = docMin + docCount;
+    for (uint32_t id = docMin; id < docLim; ++id) {
+        generate(id);
+        f.WriteBuf(_doc.c_str(), _doc.size());
+    }
+    if (headers) {
+        f.WriteString("</vespafeed>\n");
     }
     f.Flush();
     f.Close();
     LOG(info, "Calculating sha256 for %s", feedFileName.c_str());
     shafile(baseDir, feedFileName);
+    writeHistogram(baseDir, histname);
 }
 
 
@@ -622,7 +725,6 @@ class GenTestDocsApp : public SubApp
     search::Rand48 _rnd;
     string _outFile;
     bool _headers;
-    bool _json;
     
 public:
     GenTestDocsApp(FastOS_Application &app)
@@ -638,8 +740,7 @@ public:
           _mods(),
           _rnd(),
           _outFile(),
-          _headers(false),
-          _json(false)
+          _headers(false)
     {
         _mods.push_back(2);
         _mods.push_back(3);
@@ -674,8 +775,6 @@ GenTestDocsApp::usage(bool showHeader)
     cerr <<
         "vespa-gen-testdocs gentestdocs\n"
         " [--basedir basedir]\n"
-        " [--consttextfield name]\n"
-        " [--prefixtextfield name]\n"
         " [--randtextfield name]\n"
         " [--modtextfield name]\n"
         " [--idtextfield name]\n"
@@ -685,7 +784,6 @@ GenTestDocsApp::usage(bool showHeader)
         " [--numwords numWords]\n"
         " [--doctype docType]\n"
         " [--headers]\n"
-        " [--json]\n"
         " outFile\n";
 }
 
@@ -697,8 +795,6 @@ GenTestDocsApp::getOptions()
     int longopt_index = 0;
     static struct option longopts[] = {
         { "basedir", 1, NULL, 0 },
-        { "consttextfield", 1, NULL, 0 },
-        { "prefixtextfield", 1, NULL, 0 },
         { "randtextfield", 1, NULL, 0 },
         { "modtextfield", 1, NULL, 0 },
         { "idtextfield", 1, NULL, 0 },
@@ -708,13 +804,10 @@ GenTestDocsApp::getOptions()
         { "numwords", 1, NULL, 0 },
         { "doctype", 1, NULL, 0 },
         { "headers", 0, NULL, 0 }, 
-        { "json", 0, NULL, 0 },
         { NULL, 0, NULL, 0 }
     };
     enum longopts_enum {
         LONGOPT_BASEDIR,
-        LONGOPT_CONSTTEXTFIELD,
-        LONGOPT_PREFIXTEXTFIELD,
         LONGOPT_RANDTEXTFIELD,
         LONGOPT_MODTEXTFIELD,
         LONGOPT_IDTEXTFIELD,
@@ -723,8 +816,7 @@ GenTestDocsApp::getOptions()
         LONGOPT_MINDOCID,
         LONGOPT_NUMWORDS,
         LONGOPT_DOCTYPE,
-        LONGOPT_HEADERS,
-        LONGOPT_JSON
+        LONGOPT_HEADERS
     };
     int optIndex = 2;
     while ((c = _app.GetOptLong("v",
@@ -738,12 +830,6 @@ GenTestDocsApp::getOptions()
             switch (longopt_index) {
             case LONGOPT_BASEDIR:
                 _baseDir = optArgument;
-                break;
-            case LONGOPT_CONSTTEXTFIELD:
-                _fields.emplace_back(std::make_shared<ConstTextFieldGenerator>(splitArg(optArgument)));
-                break;
-            case LONGOPT_PREFIXTEXTFIELD:
-                _fields.emplace_back(std::make_shared<PrefixTextFieldGenerator>(splitArg(optArgument)));
                 break;
             case LONGOPT_RANDTEXTFIELD:
                 g.reset(new RandTextFieldGenerator(optArgument,
@@ -770,6 +856,7 @@ GenTestDocsApp::getOptions()
                                                   100000));
                 _fields.push_back(g);
                 break;
+                break;
             case LONGOPT_DOCIDLIMIT:
                 _docIdLimit = atoi(optArgument);
                 break;
@@ -784,9 +871,6 @@ GenTestDocsApp::getOptions()
                 break;
             case LONGOPT_HEADERS:
                 _headers = true;
-                break;
-            case LONGOPT_JSON:
-                _json = true;
                 break;
             default:
                 if (optArgument != NULL) {
@@ -827,7 +911,7 @@ GenTestDocsApp::run()
                          idPrefix,
                          _fields);
     LOG(info, "generating %s", _outFile.c_str());
-    dg.generate(_minDocId, _docIdLimit, _baseDir, _outFile, _headers, _json);
+    dg.generate(_minDocId, _docIdLimit, _baseDir, _outFile, _headers);
     LOG(info, "done");
     return 0;
 }

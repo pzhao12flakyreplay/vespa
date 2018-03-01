@@ -12,6 +12,7 @@ import com.yahoo.config.provision.NodeFlavors;
 import com.yahoo.config.provision.NodeType;
 import com.yahoo.config.provision.Zone;
 import com.yahoo.config.provisioning.NodeRepositoryConfig;
+import com.yahoo.path.Path;
 import com.yahoo.transaction.Mutex;
 import com.yahoo.transaction.NestedTransaction;
 import com.yahoo.vespa.curator.Curator;
@@ -184,7 +185,7 @@ public class NodeRepository extends AbstractComponent {
                 // - proxy nodes
                 // - parent (Docker) hosts of already trusted nodes. This is needed in a transition period, while
                 //   we migrate away from IPv4-only nodes
-                trustedNodes.addAll(candidates.parentsOf(trustedNodes).asList()); // TODO: Remove when we no longer have IPv4-only nodes
+                trustedNodes.addAll(candidates.parentNodes(trustedNodes).asList()); // TODO: Remove when we no longer have IPv4-only nodes
                 trustedNodes.addAll(candidates.nodeType(NodeType.proxy).asList());
                 if (node.state() == Node.State.ready) {
                     // Tenant nodes in state ready, trust:
@@ -228,9 +229,9 @@ public class NodeRepository extends AbstractComponent {
     public List<NodeAcl> getNodeAcls(Node node, boolean children) {
         NodeList candidates = new NodeList(getNodes());
         if (children) {
-            return candidates.childrenOf(node).asList().stream()
-                             .map(childNode -> getNodeAcl(childNode, candidates))
-                             .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
+            return candidates.childNodes(node).asList().stream()
+                    .map(childNode -> getNodeAcl(childNode, candidates))
+                    .collect(Collectors.collectingAndThen(Collectors.toList(), Collections::unmodifiableList));
         } else {
             return Collections.singletonList(getNodeAcl(node, candidates));
         }
@@ -305,7 +306,7 @@ public class NodeRepository extends AbstractComponent {
     }
 
     /** Sets a list of nodes ready and returns the nodes in the ready state */
-    public List<Node> setReady(List<Node> nodes, Agent agent, String reason) {
+    public List<Node> setReady(List<Node> nodes) {
         try (Mutex lock = lockUnallocated()) {
             List<Node> nodesWithResetFields = nodes.stream()
                     .map(node -> {
@@ -315,16 +316,16 @@ public class NodeRepository extends AbstractComponent {
                     })
                     .collect(Collectors.toList());
 
-            return db.writeTo(Node.State.ready, nodesWithResetFields, agent, Optional.of(reason));
+            return db.writeTo(Node.State.ready, nodesWithResetFields, Agent.system, Optional.empty());
         }
     }
 
-    public Node setReady(String hostname, Agent agent, String reason) {
+    public Node setReady(String hostname) {
         Node nodeToReady = getNode(hostname).orElseThrow(() ->
                 new NoSuchNodeException("Could not move " + hostname + " to ready: Node not found"));
 
         if (nodeToReady.state() == Node.State.ready) return nodeToReady;
-        return setReady(Collections.singletonList(nodeToReady), agent, reason).get(0);
+        return setReady(Collections.singletonList(nodeToReady)).get(0);
     }
 
     /** Reserve nodes. This method does <b>not</b> lock the node repository */
@@ -371,8 +372,13 @@ public class NodeRepository extends AbstractComponent {
     }
 
     /** Move nodes to the dirty state */
-    public List<Node> setDirty(List<Node> nodes, Agent agent, String reason) {
-        return performOn(NodeListFilter.from(nodes), node -> setDirty(node, agent, reason));
+    public List<Node> setDirty(List<Node> nodes) {
+        return performOn(NodeListFilter.from(nodes), this::setDirty);
+    }
+
+    /** Move a single node to the dirty state */
+    public Node setDirty(Node node) {
+        return db.writeTo(Node.State.dirty, node, Agent.system, Optional.empty());
     }
 
     /**
@@ -381,18 +387,13 @@ public class NodeRepository extends AbstractComponent {
      *
      * @throws IllegalArgumentException if the node has hardware failure
      */
-    public Node setDirty(Node node, Agent agent, String reason) {
-        if (node.status().hardwareFailureDescription().isPresent())
-            throw new IllegalArgumentException("Could not deallocate " + node.hostname() + ": It has a hardware failure");
-
-        return db.writeTo(Node.State.dirty, node, agent, Optional.of(reason));
-    }
-
-    public Node setDirty(String hostname, Agent agent, String reason) {
-        Node node = getNode(hostname, Node.State.provisioned, Node.State.failed, Node.State.parked).orElseThrow(() ->
+    public Node setDirty(String hostname) {
+        Node nodeToDirty = getNode(hostname, Node.State.provisioned, Node.State.failed, Node.State.parked).orElseThrow(() ->
                 new IllegalArgumentException("Could not deallocate " + hostname + ": No such node in the provisioned, failed or parked state"));
 
-        return setDirty(node, agent, reason);
+        if (nodeToDirty.status().hardwareFailureDescription().isPresent())
+            throw new IllegalArgumentException("Could not deallocate " + hostname + ": It has a hardware failure");
+        return setDirty(nodeToDirty);
     }
 
     /**
@@ -439,8 +440,8 @@ public class NodeRepository extends AbstractComponent {
      * @return the node in its new state
      * @throws NoSuchNodeException if the node is not found
      */
-    public Node reactivate(String hostname, Agent agent, String reason) {
-        return move(hostname, Node.State.active, agent, Optional.of(reason));
+    public Node reactivate(String hostname, Agent agent) {
+        return move(hostname, Node.State.active, agent, Optional.empty());
     }
 
     private List<Node> moveRecursively(String hostname, Node.State toState, Agent agent, Optional<String> reason) {
@@ -491,7 +492,11 @@ public class NodeRepository extends AbstractComponent {
                     "Cannot make " + hostname + " available for new allocation, must be in state dirty, but was in " + node.state());
         }
 
-        return removeRecursively(node, true);
+        if (dynamicAllocationEnabled()) {
+            return removeRecursively(node, true);
+        } else {
+            return setReady(Collections.singletonList(node));
+        }
     }
 
     /**
@@ -647,5 +652,13 @@ public class NodeRepository extends AbstractComponent {
     /** Acquires the appropriate lock for this node */
     private Mutex lock(Node node) {
         return node.allocation().isPresent() ? lock(node.allocation().get().owner()) : lockUnallocated();
+    }
+
+    /*
+     * Temporary feature toggle to enable/disable dynamic docker allocation
+     * TODO: Remove when enabled in all zones
+     */
+    public boolean dynamicAllocationEnabled() {
+        return curator.exists(Path.fromString("/provision/v1/dynamicDockerAllocation"));
     }
 }

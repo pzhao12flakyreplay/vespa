@@ -38,12 +38,12 @@ public class CreatePositionZCurve extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             DataType fieldType = field.getDataType();
             if ( ! isSupportedPositionType(fieldType)) continue;
 
-            if (validate && field.doesIndexing()) {
+            if (field.doesIndexing()) {
                 fail(search, field, "Indexing of data type '" + fieldType.getName() + "' is not supported, " +
                                     "replace 'index' statement with 'attribute'.");
             }
@@ -56,7 +56,7 @@ public class CreatePositionZCurve extends Processor {
             field.getAttributes().remove(fieldName);
 
             String zName = PositionDataType.getZCurveFieldName(fieldName);
-            SDField zCurveField = createZCurveField(field, zName, validate);
+            SDField zCurveField = createZCurveField(field, zName);
             search.addExtraField(zCurveField);
             search.fieldSets().addBuiltInFieldSetItem(BuiltInFieldSets.INTERNAL_FIELDSET_NAME, zCurveField.getName());
 
@@ -65,11 +65,11 @@ public class CreatePositionZCurve extends Processor {
             ensureCompatibleSummary(field, zName,
                                     PositionDataType.getPositionSummaryFieldName(fieldName),
                                     DataType.getArray(DataType.STRING), // will become "xmlstring"
-                                    SummaryTransform.POSITIONS, summaryTo, validate);
+                                    SummaryTransform.POSITIONS, summaryTo);
             ensureCompatibleSummary(field, zName,
                                     PositionDataType.getDistanceSummaryFieldName(fieldName),
                                     DataType.INT,
-                                    SummaryTransform.DISTANCE, summaryTo, validate);
+                                    SummaryTransform.DISTANCE, summaryTo);
             // clear indexing script
             field.setIndexingScript(null);
             SDField posX = field.getStructField(PositionDataType.FIELD_X);
@@ -83,12 +83,12 @@ public class CreatePositionZCurve extends Processor {
             if (doesSummary) ensureCompatibleSummary(field, zName,
                                                      field.getName(),
                                                      field.getDataType(),
-                                                     SummaryTransform.GEOPOS, summaryTo, validate);
+                                                     SummaryTransform.GEOPOS, summaryTo);
         }
     }
 
-    private SDField createZCurveField(SDField inputField, String fieldName, boolean validate) {
-        if (validate && search.getConcreteField(fieldName) != null || search.getAttribute(fieldName) != null) {
+    private SDField createZCurveField(SDField inputField, String fieldName) {
+        if (search.getConcreteField(fieldName) != null || search.getAttribute(fieldName) != null) {
             throw newProcessException(search, null, "Incompatible position attribute '" + fieldName +
                                                     "' already created.");
         }
@@ -108,7 +108,7 @@ public class CreatePositionZCurve extends Processor {
     }
 
     private void ensureCompatibleSummary(SDField field, String sourceName, String summaryName, DataType summaryType,
-                                         SummaryTransform summaryTransform, Collection<String> summaryTo, boolean validate) {
+                                         SummaryTransform summaryTransform, Collection<String> summaryTo) {
         SummaryField summary = search.getSummaryField(summaryName);
         if (summary == null) {
             summary = new SummaryField(summaryName, summaryType, summaryTransform);
@@ -116,8 +116,7 @@ public class CreatePositionZCurve extends Processor {
             summary.addDestinations(summaryTo);
             field.addSummaryField(summary);
         } else if (!summary.getDataType().equals(summaryType)) {
-            if (validate)
-                fail(search, field, "Incompatible summary field '" + summaryName + "' type "+summary.getDataType()+" already created.");
+            fail(search, field, "Incompatible summary field '" + summaryName + "' type "+summary.getDataType()+" already created.");
         } else if (summary.getTransform() == SummaryTransform.NONE) {
             summary.setTransform(summaryTransform);
             summary.addDestination("default");
@@ -199,5 +198,4 @@ public class CreatePositionZCurve extends Processor {
                     new ZCurveExpression(), new AttributeExpression(replace));
         }
     }
-
 }

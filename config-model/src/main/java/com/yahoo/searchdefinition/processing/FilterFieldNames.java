@@ -16,8 +16,8 @@ import java.util.logging.Level;
 
 /**
  * Takes the fields and indexes that are of type rank filter, and stores those names on all rank profiles
+ * @author vegardh
  *
- * @author Vegard Havdal
  */
 public class FilterFieldNames extends Processor {
 
@@ -26,13 +26,12 @@ public class FilterFieldNames extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField f : search.allConcreteFields()) {
             if (f.getRanking().isFilter()) {
                 filterField(f.getName());
             }
         }
-
         for (RankProfile profile : rankProfileRegistry.localRankProfiles(search)) {
             Set<String> filterFields = new LinkedHashSet<>();
             findFilterFields(search, profile, filterFields);
@@ -53,11 +52,12 @@ public class FilterFieldNames extends Processor {
     private void findFilterFields(Search search, RankProfile profile, Set<String> filterFields) {
         for (Iterator<RankProfile.RankSetting> itr = profile.declaredRankSettingIterator(); itr.hasNext(); ) {
             RankProfile.RankSetting setting = itr.next();
-            if (setting.getType().equals(RankProfile.RankSetting.Type.PREFERBITVECTOR) && ((Boolean)setting.getValue()))
+            if (setting.getType().equals(RankProfile.RankSetting.Type.PREFERBITVECTOR) &&
+                    ((Boolean)setting.getValue()).booleanValue())
             {
                 String fieldName = setting.getFieldName();
                 if (search.getConcreteField(fieldName) != null) {
-                    if ( ! profile.filterFields().contains(fieldName)) {
+                    if (!profile.filterFields().contains(fieldName)) {
                         filterFields.add(fieldName);
                     }
                 } else {

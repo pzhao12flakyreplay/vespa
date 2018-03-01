@@ -3,7 +3,6 @@
 #pragma once
 
 #include <cstdint>
-#include <vespa/vespalib/util/executor.h>
 
 struct FastS_QueryPerf
 {
@@ -21,7 +20,7 @@ struct FastS_QueryPerf
      * prepare the object for reuse logging wise.
      **/
     void reset();
-    vespalib::Executor::Task::UP make_log_task();
+    void log();
 
 private:
     uint32_t _lastQueryCnt;

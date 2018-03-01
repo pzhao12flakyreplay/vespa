@@ -280,7 +280,7 @@ public class RemoteSessionTest {
         public Model loadModel() {
             try {
                 ApplicationPackage application = new MockApplicationPackage.Builder().withEmptyHosts().withEmptyServices().withValidationOverrides(validationOverrides).build();
-                DeployState deployState = new DeployState.Builder().applicationPackage(application).now(clock.instant()).build(true);
+                DeployState deployState = new DeployState.Builder().applicationPackage(application).now(clock.instant()).build();
                 return new VespaModel(deployState);
             } catch (Exception e) {
                 throw new RuntimeException(e);

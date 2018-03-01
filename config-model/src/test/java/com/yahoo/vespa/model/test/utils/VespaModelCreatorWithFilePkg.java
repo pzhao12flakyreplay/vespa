@@ -56,7 +56,7 @@ public class VespaModelCreatorWithFilePkg {
             if (validateApplicationWithSchema) {
                 validate();
             }
-            DeployState deployState = new DeployState.Builder().applicationPackage(applicationPkg).build(true);
+            DeployState deployState = new DeployState.Builder().applicationPackage(applicationPkg).build();
             VespaModel model = new VespaModel(configModelRegistry, deployState);
             // Validate, but without checking configSources or routing (routing
             // is constructed in a special way and cannot always be validated in
@@ -67,5 +67,4 @@ public class VespaModelCreatorWithFilePkg {
             throw e instanceof RuntimeException ? (RuntimeException) e : new RuntimeException(e);
         }
     }
-
 }

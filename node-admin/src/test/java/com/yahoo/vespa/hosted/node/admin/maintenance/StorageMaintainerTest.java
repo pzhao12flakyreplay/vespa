@@ -9,8 +9,8 @@ import com.yahoo.vespa.hosted.dockerapi.ContainerName;
 import com.yahoo.vespa.hosted.dockerapi.metrics.MetricReceiverWrapper;
 import com.yahoo.vespa.hosted.node.admin.ContainerNodeSpec;
 import com.yahoo.vespa.hosted.node.admin.docker.DockerOperations;
-import com.yahoo.vespa.hosted.node.admin.component.Environment;
-import com.yahoo.vespa.hosted.node.admin.component.PathResolver;
+import com.yahoo.vespa.hosted.node.admin.util.Environment;
+import com.yahoo.vespa.hosted.node.admin.util.PathResolver;
 import com.yahoo.vespa.hosted.provision.Node;
 import org.junit.Rule;
 import org.junit.Test;
@@ -34,11 +34,7 @@ import static org.mockito.Mockito.when;
 public class StorageMaintainerTest {
     private final ManualClock clock = new ManualClock();
     private final Environment environment = new Environment.Builder()
-            .region("us-east-1")
-            .environment("prod")
-            .system("main")
-            .pathResolver(new PathResolver())
-            .build();
+            .pathResolver(new PathResolver()).build();
     private final DockerOperations docker = mock(DockerOperations.class);
     private final ProcessExecuter processExecuter = mock(ProcessExecuter.class);
     private final StorageMaintainer storageMaintainer = new StorageMaintainer(docker, processExecuter,

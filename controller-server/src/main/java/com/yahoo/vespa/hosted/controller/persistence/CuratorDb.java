@@ -2,7 +2,6 @@
 package com.yahoo.vespa.hosted.controller.persistence;
 
 import com.google.inject.Inject;
-import com.yahoo.component.Version;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.path.Path;
 import com.yahoo.transaction.NestedTransaction;
@@ -12,7 +11,6 @@ import com.yahoo.vespa.curator.Lock;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
 import com.yahoo.vespa.hosted.controller.application.DeploymentJobs;
 import com.yahoo.vespa.hosted.controller.versions.VersionStatus;
-import com.yahoo.vespa.hosted.controller.versions.VespaVersion;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
@@ -23,7 +21,6 @@ import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -126,29 +123,33 @@ public class CuratorDb {
     }
 
     public void writeInactiveJobs(Set<String> inactiveJobs) {
+        NestedTransaction transaction = new NestedTransaction();
         curator.set(inactiveJobsPath(), stringSetSerializer.toJson(inactiveJobs));
+        transaction.commit();
     }
 
     public Deque<ApplicationId> readJobQueue(DeploymentJobs.JobType jobType) {
         try {
             Optional<byte[]> data = curator.getData(jobQueuePath(jobType));
-            if ( ! data.isPresent() || data.get().length == 0) return new ArrayDeque<>(); // job queue has never been written
+            if (! data.isPresent() || data.get().length == 0) return new ArrayDeque<>(); // job queue has never been written
             return jobQueueSerializer.fromJson(data.get());
         }
         catch (RuntimeException e) {
-            log.log(Level.WARNING, "Error reading job queue of type '" + jobType.jobName() + "'; deleting it.");
-            writeJobQueue(jobType, Collections::emptyIterator);
+            log.log(Level.WARNING, "Error reading job queue, deleting inactive state");
+            writeInactiveJobs(Collections.emptySet());
             return new ArrayDeque<>();
         }
     }
 
-    public void writeJobQueue(DeploymentJobs.JobType jobType, Iterable<ApplicationId> queue) {
+    public void writeJobQueue(DeploymentJobs.JobType jobType, Deque<ApplicationId> queue) {
+        NestedTransaction transaction = new NestedTransaction();
         curator.set(jobQueuePath(jobType), jobQueueSerializer.toJson(queue));
+        transaction.commit();
     }
 
     public double readUpgradesPerMinute() {
         Optional<byte[]> n = curator.getData(upgradesPerMinutePath());
-        if ( ! n.isPresent() || n.get().length == 0) {
+        if (!n.isPresent() || n.get().length == 0) {
             return 0.5; // Default if value has never been written
         }
         return ByteBuffer.wrap(n.get()).getDouble();
@@ -158,78 +159,69 @@ public class CuratorDb {
         if (n < 0) {
             throw new IllegalArgumentException("Upgrades per minute must be >= 0");
         }
+        NestedTransaction transaction = new NestedTransaction();
         curator.set(upgradesPerMinutePath(), ByteBuffer.allocate(Double.BYTES).putDouble(n).array());
+        transaction.commit();
     }
-  
+
+    public boolean readIgnoreConfidence() {
+        Optional<byte[]> value = curator.getData(ignoreConfidencePath());
+        if (! value.isPresent() || value.get().length == 0) {
+            return false; // Default if value has never been written
+        }
+        return ByteBuffer.wrap(value.get()).getInt() == 1;
+    }
+
+    public void writeIgnoreConfidence(boolean value) {
+        NestedTransaction transaction = new NestedTransaction();
+        curator.set(ignoreConfidencePath(), ByteBuffer.allocate(Integer.BYTES).putInt(value ? 1 : 0).array());
+        transaction.commit();
+    }
+
     public void writeVersionStatus(VersionStatus status) {
         VersionStatusSerializer serializer = new VersionStatusSerializer();
+        NestedTransaction transaction = new NestedTransaction();
         try {
             curator.set(versionStatusPath(), SlimeUtils.toJsonBytes(serializer.toSlime(status)));
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to serialize version status", e);
         }
+        transaction.commit();
     }
 
     public VersionStatus readVersionStatus() {
         Optional<byte[]> data = curator.getData(versionStatusPath());
-        if ( ! data.isPresent() || data.get().length == 0) {
+        if (!data.isPresent() || data.get().length == 0) {
             return VersionStatus.empty(); // Default if status has never been written
         }
         VersionStatusSerializer serializer = new VersionStatusSerializer();
         return serializer.fromSlime(SlimeUtils.jsonToSlime(data.get()));
     }
 
-    public void writeConfidenceOverrides(Map<Version, VespaVersion.Confidence> overrides) {
-        ConfidenceOverrideSerializer serializer = new ConfidenceOverrideSerializer();
-        try {
-            curator.set(confidenceOverridesPath(), SlimeUtils.toJsonBytes(serializer.toSlime(overrides)));
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to serialize confidence overrides", e);
-        }
-    }
-
-    public Map<Version, VespaVersion.Confidence> readConfidenceOverrides() {
-        ConfidenceOverrideSerializer serializer = new ConfidenceOverrideSerializer();
-        Optional<byte[]> data = curator.getData(confidenceOverridesPath());
-        if (!data.isPresent() || data.get().length == 0) {
-            return Collections.emptyMap();
-        }
-        return serializer.fromSlime(SlimeUtils.jsonToSlime(data.get()));
-    }
-
-    // The following methods are called by internal code
-
-    @SuppressWarnings("unused")
     public Optional<byte[]> readProvisionState(String provisionId) {
         return curator.getData(provisionStatePath(provisionId));
     }
 
-    @SuppressWarnings("unused")
     public void writeProvisionState(String provisionId, byte[] data) {
         curator.set(provisionStatePath(provisionId), data);
     }
 
-    @SuppressWarnings("unused")
     public List<String> readProvisionStateIds() {
         return curator.getChildren(provisionStatePath());
     }
 
-    @SuppressWarnings("unused")
     public Optional<byte[]> readVespaServerPool() {
         return curator.getData(vespaServerPoolPath());
     }
 
-    @SuppressWarnings("unused")
     public void writeVespaServerPool(byte[] data) {
         curator.set(vespaServerPoolPath(), data);
     }
 
-    @SuppressWarnings("unused")
     public Optional<byte[]> readOpenStackServerPool() {
         return curator.getData(openStackServerPoolPath());
     }
 
-    @SuppressWarnings("unused")
     public void writeOpenStackServerPool(byte[] data) {
         curator.set(openStackServerPoolPath(), data);
     }
@@ -260,39 +252,37 @@ public class CuratorDb {
         return lockPath;
     }
 
-    private static Path inactiveJobsPath() {
+    private Path inactiveJobsPath() {
         return root.append("inactiveJobs");
     }
 
-    private static Path jobQueuePath(DeploymentJobs.JobType jobType) {
+    private Path jobQueuePath(DeploymentJobs.JobType jobType) {
         return root.append("jobQueues").append(jobType.name());
     }
 
-    private static Path upgradesPerMinutePath() {
+    private Path upgradesPerMinutePath() {
         return root.append("upgrader").append("upgradesPerMinute");
     }
 
-    private static Path confidenceOverridesPath() {
-        return root.append("upgrader").append("confidenceOverrides");
+    private Path ignoreConfidencePath() {
+        return root.append("upgrader").append("ignoreConfidence");
     }
 
-    private static Path versionStatusPath() {
-        return root.append("versionStatus");
-    }
+    private Path versionStatusPath() { return root.append("versionStatus"); }
 
-    private static Path provisionStatePath() {
+    private Path provisionStatePath() {
         return root.append("provisioning").append("states");
     }
 
-    private static Path provisionStatePath(String provisionId) {
+    private Path provisionStatePath(String provisionId) {
         return provisionStatePath().append(provisionId);
     }
 
-    private static Path vespaServerPoolPath() {
+    private Path vespaServerPoolPath() {
         return root.append("vespaServerPool");
     }
 
-    private static Path openStackServerPoolPath() {
+    private Path openStackServerPoolPath() {
         return root.append("openStackServerPool");
     }
 }

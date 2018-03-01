@@ -4,15 +4,17 @@ package com.yahoo.vespa.hosted.controller;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.RegionName;
+import com.yahoo.vespa.hosted.controller.api.integration.deployment.ArtifactRepository;
+import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.slime.Slime;
 import com.yahoo.test.ManualClock;
-import com.yahoo.vespa.athenz.api.AthenzDomain;
 import com.yahoo.vespa.curator.Lock;
 import com.yahoo.vespa.curator.mock.MockCurator;
 import com.yahoo.vespa.hosted.controller.api.Tenant;
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.DeployOptions;
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.GitRevision;
 import com.yahoo.vespa.hosted.controller.api.application.v4.model.ScrewdriverBuildJob;
+import com.yahoo.vespa.athenz.api.AthenzDomain;
 import com.yahoo.vespa.hosted.controller.api.identifiers.GitBranch;
 import com.yahoo.vespa.hosted.controller.api.identifiers.GitCommit;
 import com.yahoo.vespa.hosted.controller.api.identifiers.GitRepository;
@@ -21,14 +23,11 @@ import com.yahoo.vespa.hosted.controller.api.identifiers.PropertyId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.ScrewdriverId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
 import com.yahoo.vespa.hosted.controller.api.integration.chef.ChefMock;
-import com.yahoo.vespa.hosted.controller.api.integration.deployment.ArtifactRepository;
 import com.yahoo.vespa.hosted.controller.api.integration.dns.MemoryNameService;
-import com.yahoo.vespa.hosted.controller.api.integration.entity.EntityService;
 import com.yahoo.vespa.hosted.controller.api.integration.entity.MemoryEntityService;
 import com.yahoo.vespa.hosted.controller.api.integration.github.GitHubMock;
 import com.yahoo.vespa.hosted.controller.api.integration.organization.MockOrganization;
 import com.yahoo.vespa.hosted.controller.api.integration.routing.MemoryGlobalRoutingService;
-import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.vespa.hosted.controller.application.ApplicationPackage;
 import com.yahoo.vespa.hosted.controller.athenz.mock.AthenzClientFactoryMock;
 import com.yahoo.vespa.hosted.controller.athenz.mock.AthenzDbMock;
@@ -64,33 +63,31 @@ public final class ControllerTester {
     private final MemoryNameService nameService;
     private final RotationsConfig rotationsConfig;
     private final ArtifactRepositoryMock artifactRepository;
-    private final EntityService entityService;
 
     private Controller controller;
 
     public ControllerTester() {
         this(new MemoryControllerDb(), new AthenzDbMock(), new ManualClock(), new ConfigServerClientMock(),
              new ZoneRegistryMock(), new GitHubMock(), new MockCuratorDb(), defaultRotationsConfig(),
-             new MemoryNameService(), new ArtifactRepositoryMock(), new MemoryEntityService());
+             new MemoryNameService(), new ArtifactRepositoryMock());
     }
 
     public ControllerTester(ManualClock clock) {
         this(new MemoryControllerDb(), new AthenzDbMock(), clock, new ConfigServerClientMock(),
              new ZoneRegistryMock(), new GitHubMock(), new MockCuratorDb(), defaultRotationsConfig(),
-             new MemoryNameService(), new ArtifactRepositoryMock(), new MemoryEntityService());
+             new MemoryNameService(), new ArtifactRepositoryMock());
     }
 
     public ControllerTester(RotationsConfig rotationsConfig) {
         this(new MemoryControllerDb(), new AthenzDbMock(), new ManualClock(), new ConfigServerClientMock(),
              new ZoneRegistryMock(), new GitHubMock(), new MockCuratorDb(), rotationsConfig, new MemoryNameService(),
-             new ArtifactRepositoryMock(), new MemoryEntityService());
+             new ArtifactRepositoryMock());
     }
 
     private ControllerTester(ControllerDb db, AthenzDbMock athenzDb, ManualClock clock,
                              ConfigServerClientMock configServer, ZoneRegistryMock zoneRegistry,
                              GitHubMock gitHub, CuratorDb curator, RotationsConfig rotationsConfig,
-                             MemoryNameService nameService, ArtifactRepositoryMock artifactRepository,
-                             EntityService entityService) {
+                             MemoryNameService nameService, ArtifactRepositoryMock artifactRepository) {
         this.db = db;
         this.athenzDb = athenzDb;
         this.clock = clock;
@@ -101,9 +98,8 @@ public final class ControllerTester {
         this.nameService = nameService;
         this.rotationsConfig = rotationsConfig;
         this.artifactRepository = artifactRepository;
-        this.entityService = entityService;
         this.controller = createController(db, curator, rotationsConfig, configServer, clock, gitHub, zoneRegistry,
-                                           athenzDb, nameService, artifactRepository, entityService);
+                                           athenzDb, nameService, artifactRepository);
     }
 
     public Controller controller() { return controller; }
@@ -124,12 +120,10 @@ public final class ControllerTester {
 
     public ArtifactRepositoryMock artifactRepository() { return artifactRepository; }
 
-    public EntityService entityService() { return entityService; }
-
     /** Create a new controller instance. Useful to verify that controller state is rebuilt from persistence */
     public final void createNewController() {
         controller = createController(db, curator, rotationsConfig, configServer, clock, gitHub, zoneRegistry, athenzDb,
-                                      nameService, artifactRepository, entityService);
+                                      nameService, artifactRepository);
     }
 
     /** Creates the given tenant and application and deploys it */
@@ -239,12 +233,12 @@ public final class ControllerTester {
                                                ConfigServerClientMock configServerClientMock, ManualClock clock,
                                                GitHubMock gitHubClientMock, ZoneRegistryMock zoneRegistryMock,
                                                AthenzDbMock athensDb, MemoryNameService nameService,
-                                               ArtifactRepository artifactRepository, EntityService entityService) {
+                                               ArtifactRepository artifactRepository) {
         Controller controller = new Controller(db,
                                                curator,
                                                rotationsConfig,
                                                gitHubClientMock,
-                                               entityService,
+                                               new MemoryEntityService(),
                                                new MockOrganization(clock),
                                                new MemoryGlobalRoutingService(),
                                                zoneRegistryMock,

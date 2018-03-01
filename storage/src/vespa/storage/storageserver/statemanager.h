@@ -33,8 +33,6 @@ namespace metrics {
 
 namespace storage {
 
-namespace lib { class ClusterStateBundle; }
-
 class StateManager : public NodeStateUpdater,
                      public StorageLink,
                      public framework::HtmlStatusReporter,
@@ -50,9 +48,8 @@ class StateManager : public NodeStateUpdater,
     std::atomic<bool> _notifyingListeners;
     std::shared_ptr<lib::NodeState> _nodeState;
     std::shared_ptr<lib::NodeState> _nextNodeState;
-    using ClusterStateBundle = lib::ClusterStateBundle;
-    std::shared_ptr<const ClusterStateBundle> _systemState;
-    std::shared_ptr<const ClusterStateBundle> _nextSystemState;
+    std::shared_ptr<lib::ClusterState> _systemState;
+    std::shared_ptr<lib::ClusterState> _nextSystemState;
     std::list<StateListener*> _stateListeners;
     typedef std::pair<framework::MilliSecTime,
                       api::GetNodeStateCommand::SP> TimeStatePair;
@@ -60,7 +57,8 @@ class StateManager : public NodeStateUpdater,
     mutable vespalib::Monitor _threadMonitor;
     framework::MilliSecTime _lastProgressUpdateCausingSend;
     vespalib::Double _progressLastInitStateSend;
-    using TimeSysStatePair = std::pair<framework::MilliSecTime, std::shared_ptr<const ClusterStateBundle>>;
+    typedef std::pair<framework::MilliSecTime,
+                      lib::ClusterState::SP> TimeSysStatePair;
     std::deque<TimeSysStatePair> _systemStateHistory;
     uint32_t _systemStateHistorySize;
     std::unique_ptr<HostInfo> _hostInfo;
@@ -81,7 +79,7 @@ public:
 
     lib::NodeState::CSP getReportedNodeState() const override;
     lib::NodeState::CSP getCurrentNodeState() const override;
-    std::shared_ptr<const ClusterStateBundle> getClusterStateBundle() const override;
+    lib::ClusterState::CSP getSystemState() const override;
 
     void addStateListener(StateListener&) override;
     void removeStateListener(StateListener&) override;
@@ -125,8 +123,8 @@ private:
      * state differs between currentState and newState.
      */
     void logNodeClusterStateTransition(
-            const ClusterStateBundle& currentState,
-            const ClusterStateBundle& newState) const;
+            const lib::ClusterState& currentState,
+            const lib::ClusterState& newState) const;
 
     bool onGetNodeState(const std::shared_ptr<api::GetNodeStateCommand>&) override;
     bool onSetSystemState(const std::shared_ptr<api::SetSystemStateCommand>&) override;

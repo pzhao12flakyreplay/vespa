@@ -14,6 +14,7 @@ import static junit.framework.TestCase.assertTrue;
 
 /**
  * @author hmusum
+ * @since 5.1
  */
 public class RecentLogFilterTest {
 
@@ -31,10 +32,11 @@ public class RecentLogFilterTest {
         for (int i = 1; i < RecentLogFilter.maxMessages + 1; i++) {
             assertTrue(rlf.isLoggable(logRecords.get(i)));
         }
+        System.out.println(logRecords.size());
+        System.out.println(logRecords);
 
         // Should have filled up maxMessages slots with records 1-maxMessages
         // and pushed the first one out, so the below should return true
         assertTrue(rlf.isLoggable(logRecords.get(0)));
     }
-
 }

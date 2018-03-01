@@ -24,23 +24,18 @@ public class QueryResultTestCase extends junit.framework.TestCase {
     private static GlobalId gid2 = new GlobalId(new byte[] {2,2,2,2,2,2,2,2,2,2,2,2});
 
     public void testDecodeQueryResultX() {
-         byte[] packetData=new byte[] {
-                 0,0,0,100,
-                 0,0,0,217-256,
-                 0,0,0,1,
-                 0,0,0,1,
-                 0,0,0,0,
-                 0,0,0,2,
-                 0,0,0,0,0,0,0,5,
-                 0x40,0x39,0,0,0,0,0,0,
-                 0,0,0,111,
-                 0,0,0,0,0,0,0,89,
-                 0,0,0,0,0,0,0,90,
-                 0,0,0,0,0,0,0,91,
-                 0,0,0,1,
-                 1,1,1,1,1,1,1,1,1,1,1,1, 0x40,0x37,0,0,0,0,0,0, 0,0,0,7, 0,0,0,36,
-                 2,2,2,2,2,2,2,2,2,2,2,2, 0x40,0x35,0,0,0,0,0,0, 0,0,0,8, 0,0,0,37
-         };
+         byte[] packetData=new byte[] {0,0,0,100,
+                                       0,0,0,217-256,
+                                       0,0,0,1,
+                                       0,0,0,15,
+                                       0,0,0,0,
+                                       0,0,0,2,
+                                       0,0,0,0,0,0,0,5,
+                                       0x40,0x39,0,0,0,0,0,0,
+                                       0,0,0,111,
+                                       0,0,0,97,
+                                       1,1,1,1,1,1,1,1,1,1,1,1, 0x40,0x37,0,0,0,0,0,0, 0,0,0,7, 0,0,0,36,
+                                       2,2,2,2,2,2,2,2,2,2,2,2, 0x40,0x35,0,0,0,0,0,0, 0,0,0,8, 0,0,0,37};
         ByteBuffer buffer=ByteBuffer.allocate(200);
         buffer.put(packetData);
         buffer.flip();
@@ -49,14 +44,12 @@ public class QueryResultTestCase extends junit.framework.TestCase {
         QueryResultPacket result=(QueryResultPacket)packet;
 
         assertTrue(result.getMldFeature());
+        assertTrue(result.getDatasetFeature());
 
         assertEquals(5,result.getTotalDocumentCount());
         assertEquals(25,result.getMaxRank());
         assertEquals(111,result.getDocstamp());
-        assertEquals(89, result.getCoverageDocs());
-        assertEquals(90, result.getActiveDocs());
-        assertEquals(91, result.getSoonActiveDocs());
-        assertEquals(1, result.getDegradedReason());
+        assertEquals(97,result.getDataset());
 
         assertEquals(2,result.getDocuments().size());
         DocumentInfo document1= result.getDocuments().get(0);
@@ -72,24 +65,18 @@ public class QueryResultTestCase extends junit.framework.TestCase {
     }
 
     public void testDecodeQueryResultMoreHits() {
-         byte[] packetData=new byte[] {
-                 0,0,0,100,
-                 0,0,0,217-256,
-                 0,0,0,1,
-                 0,0,0,3,
-                 0,0,0,0,
-                 0,0,0,2,
-                 0,0,0,0,0,0,0,5,
-                 0x40,0x39,0,0,0,0,0,0,
-                 0,0,0,111,
-                 0,6,0,5,
-                 0,0,0,0,0,0,0,89,
-                 0,0,0,0,0,0,0,90,
-                 0,0,0,0,0,0,0,91,
-                 0,0,0,1,
-                 1,1,1,1,1,1,1,1,1,1,1,1, 0x40,0x37,0,0,0,0,0,0, 0,0,0,7, 0,0,0,36,
-                 2,2,2,2,2,2,2,2,2,2,2,2, 0x40,0x35,0,0,0,0,0,0, 0,0,0,8, 0,0,0,37
-         };
+         byte[] packetData=new byte[] {0,0,0,100,
+                                       0,0,0,217-256,
+                                       0,0,0,1,
+                                       0,0,0,15,
+                                       0,0,0,0,
+                                       0,0,0,2,
+                                       0,0,0,0,0,0,0,5,
+                                       0x40,0x39,0,0,0,0,0,0,
+                                       0,0,0,111,
+                                       0,0,0,97,
+                                       1,1,1,1,1,1,1,1,1,1,1,1, 0x40,0x37,0,0,0,0,0,0, 0,0,0,7, 0,0,0,36,
+                                       2,2,2,2,2,2,2,2,2,2,2,2, 0x40,0x35,0,0,0,0,0,0, 0,0,0,8, 0,0,0,37};
         ByteBuffer buffer=ByteBuffer.allocate(200);
         buffer.put(packetData);
         buffer.flip();
@@ -102,7 +89,5 @@ public class QueryResultTestCase extends junit.framework.TestCase {
         assertEquals(gid1,document1.getGlobalId());
         DocumentInfo document2= result.getDocuments().get(1);
         assertEquals(gid2,document2.getGlobalId());
-        assertEquals(6, result.getNodesQueried());
-        assertEquals(5, result.getNodesReplied());
     }
 }

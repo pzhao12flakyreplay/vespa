@@ -23,7 +23,7 @@ import com.yahoo.vespa.hosted.controller.api.identifiers.PropertyId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.ScrewdriverId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.UserGroup;
-import com.yahoo.vespa.hosted.controller.api.integration.BuildService;
+import com.yahoo.vespa.hosted.controller.api.integration.BuildService.BuildJob;
 import com.yahoo.vespa.hosted.controller.api.integration.dns.Record;
 import com.yahoo.vespa.hosted.controller.api.integration.dns.RecordName;
 import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
@@ -38,9 +38,8 @@ import com.yahoo.vespa.hosted.controller.application.JobStatus;
 import com.yahoo.vespa.hosted.controller.application.SourceRevision;
 import com.yahoo.vespa.hosted.controller.athenz.mock.AthenzDbMock;
 import com.yahoo.vespa.hosted.controller.deployment.ApplicationPackageBuilder;
-import com.yahoo.vespa.hosted.controller.deployment.DeploymentQueue;
+import com.yahoo.vespa.hosted.controller.deployment.BuildSystem;
 import com.yahoo.vespa.hosted.controller.deployment.DeploymentTester;
-import com.yahoo.vespa.hosted.controller.deployment.BuildJob;
 import com.yahoo.vespa.hosted.controller.persistence.ApplicationSerializer;
 import com.yahoo.vespa.hosted.controller.rotation.RotationId;
 import com.yahoo.vespa.hosted.controller.rotation.RotationLock;
@@ -105,9 +104,9 @@ public class ControllerTest {
         // staging job - succeeding
         Version version1 = tester.defaultVespaVersion();
         Application app1 = tester.createApplication("app1", "tenant1", 1, 11L);
-        tester.jobCompletion(component).application(app1).uploadArtifact(applicationPackage).submit();
-        assertEquals("Application version is known from completion of initial job",
-                     ApplicationVersion.from(BuildJob.defaultSourceRevision, BuildJob.defaultBuildNumber),
+        tester.notifyJobCompletion(component, app1, true);
+        assertEquals("Application version is currently not known",
+                     ApplicationVersion.unknown,
                      tester.controller().applications().require(app1.id()).change().application().get());
         tester.deployAndNotify(app1, applicationPackage, true, systemTest);
         tester.deployAndNotify(app1, applicationPackage, true, stagingTest);
@@ -116,12 +115,12 @@ public class ControllerTest {
         ApplicationVersion applicationVersion = tester.controller().applications().require(app1.id()).change().application().get();
         assertTrue("Application version has been set during deployment", applicationVersion != ApplicationVersion.unknown);
         assertStatus(JobStatus.initial(stagingTest)
-                              .withTriggering(version1, applicationVersion, "", tester.clock().instant().minus(Duration.ofMillis(1)))
+                              .withTriggering(version1, applicationVersion, false, "", tester.clock().instant().minus(Duration.ofMillis(1)))
                               .withCompletion(42, Optional.empty(), tester.clock().instant(), tester.controller()), app1.id(), tester.controller());
 
         // Causes first deployment job to be triggered
         assertStatus(JobStatus.initial(productionCorpUsEast1)
-                              .withTriggering(version1, applicationVersion, "", tester.clock().instant()), app1.id(), tester.controller());
+                              .withTriggering(version1, applicationVersion, false, "", tester.clock().instant()), app1.id(), tester.controller());
         tester.clock().advance(Duration.ofSeconds(1));
 
         // production job (failing)
@@ -129,9 +128,9 @@ public class ControllerTest {
         assertEquals(4, applications.require(app1.id()).deploymentJobs().jobStatus().size());
 
         JobStatus expectedJobStatus = JobStatus.initial(productionCorpUsEast1)
-                                               .withTriggering(version1, applicationVersion, "", tester.clock().instant()) // Triggered first without application version info
+                                               .withTriggering(version1, applicationVersion, false, "", tester.clock().instant()) // Triggered first without application version info
                                                .withCompletion(42, Optional.of(JobError.unknown), tester.clock().instant(), tester.controller())
-                                               .withTriggering(version1, applicationVersion, "", tester.clock().instant()); // Re-triggering (due to failure) has application version info
+                                               .withTriggering(version1, applicationVersion, false, "", tester.clock().instant()); // Re-triggering (due to failure) has application version info
 
         assertStatus(expectedJobStatus, app1.id(), tester.controller());
 
@@ -148,27 +147,26 @@ public class ControllerTest {
 
         tester.clock().advance(Duration.ofHours(1));
 
-        // Need to complete the job, or new jobs won't start.
-        tester.jobCompletion(productionCorpUsEast1).application(app1).unsuccessful().submit();
+        tester.notifyJobCompletion(productionCorpUsEast1, app1, false); // Need to complete the job, or new jobs won't start.
 
         // system and staging test job - succeeding
-        tester.jobCompletion(component).application(app1).submit();
+        tester.notifyJobCompletion(component, app1, true);
         tester.deployAndNotify(app1, applicationPackage, true, false, systemTest);
         assertStatus(JobStatus.initial(systemTest)
-                              .withTriggering(version1, applicationVersion, "", tester.clock().instant().minus(Duration.ofMillis(1)))
+                              .withTriggering(version1, applicationVersion, false, "", tester.clock().instant().minus(Duration.ofMillis(1)))
                               .withCompletion(42, Optional.empty(), tester.clock().instant(), tester.controller()), app1.id(), tester.controller());
         tester.deployAndNotify(app1, applicationPackage, true, stagingTest);
 
         // production job succeeding now
         tester.deployAndNotify(app1, applicationPackage, true, productionCorpUsEast1);
         expectedJobStatus = expectedJobStatus
-                .withTriggering(version1, applicationVersion, "", tester.clock().instant().minus(Duration.ofMillis(1)))
+                .withTriggering(version1, applicationVersion, false, "", tester.clock().instant().minus(Duration.ofMillis(1)))
                 .withCompletion(42, Optional.empty(), tester.clock().instant(), tester.controller());
         assertStatus(expectedJobStatus, app1.id(), tester.controller());
 
         // causes triggering of next production job
         assertStatus(JobStatus.initial(productionUsEast3)
-                              .withTriggering(version1, applicationVersion, "", tester.clock().instant()),
+                              .withTriggering(version1, applicationVersion, false, "", tester.clock().instant()),
                      app1.id(), tester.controller());
         tester.deployAndNotify(app1, applicationPackage, true, productionUsEast3);
 
@@ -179,7 +177,7 @@ public class ControllerTest {
                 .environment(Environment.prod)
                 .region("us-east-3")
                 .build();
-        tester.jobCompletion(component).application(app1).buildNumber(43).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app1, true);
         try {
             tester.deploy(systemTest, app1, applicationPackage);
             fail("Expected exception due to unallowed production deployment removal");
@@ -201,7 +199,6 @@ public class ControllerTest {
                 .environment(Environment.prod)
                 .region("us-east-3")
                 .build();
-        tester.jobCompletion(component).application(app1).buildNumber(44).uploadArtifact(applicationPackage).submit();
         tester.deployAndNotify(app1, applicationPackage, true, systemTest);
         assertNull("Zone was removed",
                    applications.require(app1.id()).deployments().get(productionCorpUsEast1.zone(SystemName.main).get()));
@@ -220,13 +217,52 @@ public class ControllerTest {
         SourceRevision source = new SourceRevision("repo", "master", "commit1");
 
         ApplicationVersion applicationVersion = ApplicationVersion.from(source, 101);
-        runDeployment(tester, app.id(), applicationVersion, applicationPackage, source,101);
+        tester.artifactRepository().put(app.id(), applicationPackage, applicationVersion.id());
+        runDeployment(tester, app.id(), applicationVersion, Optional.empty(), Optional.of(source), 101);
         assertEquals("Artifact is downloaded twice in staging and once for other zones", 5,
                      tester.artifactRepository().hits(app.id(), applicationVersion.id()));
 
         // Application is upgraded. This makes deployment orchestration pick the last successful application version in
         // zones which do not have permanent deployments, e.g. test and staging
         runUpgrade(tester, app.id(), applicationVersion);
+    }
+
+    @Test
+    public void testDeploymentApplicationVersionMigration() {
+        DeploymentTester tester = new DeploymentTester();
+        Application app = tester.createApplication("app1", "tenant1", 1, 11L);
+        ApplicationPackage applicationPackage = new ApplicationPackageBuilder()
+                .environment(Environment.prod)
+                .region("corp-us-east-1")
+                .region("us-east-3")
+                .build();
+        SourceRevision source = new SourceRevision("repo", "master", "commit1");
+
+        // Scenario 1: Old fashioned deployment. Simulates existing production deployments
+        ApplicationVersion v0 = ApplicationVersion.from(applicationPackage.hash(), source);
+        runDeployment(tester, app.id(), v0, Optional.of(applicationPackage), Optional.empty(), 100);
+        assertEquals("Nothing downloaded from repository", 0,
+                     tester.artifactRepository().hits(app.id(), v0.id()));
+
+        // Scenario 2: New application version number is reported and package is downloaded by controller. In staging,
+        // the application package from the deployer is used as v0 cannot be downloaded from repository.
+        ApplicationVersion v1 = ApplicationVersion.from(source, 101);
+        tester.artifactRepository().put(app.id(), applicationPackage, v1.id());
+        runDeployment(tester, app.id(), v1, Optional.of(applicationPackage), Optional.of(source), 101);
+        assertEquals("Artifact is downloaded once per zone", 4,
+                     tester.artifactRepository().hits(app.id(), v1.id()));
+        assertEquals("v0 is never downloaded", 0,
+                     tester.artifactRepository().hits(app.id(), v0.id()));
+        tester.artifactRepository().resetHits();
+
+        // Scenario 3: Both application versions are available in repository
+        ApplicationVersion v2 = ApplicationVersion.from(source, 102);
+        tester.artifactRepository().put(app.id(), applicationPackage, v2.id());
+        runDeployment(tester, app.id(), v2, Optional.empty(), Optional.of(source), 102);
+        assertEquals("Previous artifact is downloaded once", 1,
+                     tester.artifactRepository().hits(app.id(), v1.id()));
+        assertEquals("Artifact is downloaded once per zone", 4,
+                     tester.artifactRepository().hits(app.id(), v2.id()));
     }
 
     @Test
@@ -243,7 +279,7 @@ public class ControllerTest {
         Application app1 = tester.createApplication("application1", "tenant1", 1, 1L);
 
         // First deployment: An application change
-        tester.jobCompletion(component).application(app1).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app1, true);
         tester.deployAndNotify(app1, applicationPackage, true, systemTest);
         tester.deployAndNotify(app1, applicationPackage, true, stagingTest);
         tester.deployAndNotify(app1, applicationPackage, true, productionUsWest1);
@@ -266,7 +302,7 @@ public class ControllerTest {
                 .region("us-west-1")
                 .region("us-east-3")
                 .build();
-        tester.jobCompletion(component).application(app1).buildNumber(43).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app1, true);
         tester.deployAndNotify(app1, applicationPackage, true, systemTest);
         tester.deployAndNotify(app1, applicationPackage, true, stagingTest);
         tester.deployAndNotify(app1, applicationPackage, true, productionUsWest1);
@@ -309,7 +345,7 @@ public class ControllerTest {
         for (int i = 0; i < versions.size(); i++) {
             VespaVersion c = versions.get(i);
             if (c.isCurrentSystemVersion())
-                versions.set(i, new VespaVersion(c.statistics(), c.releaseCommit(), c.committedAt(),
+                versions.set(i, new VespaVersion(c.statistics(), c.releaseCommit(), c.releasedAt(),
                                                  false, c.configServerHostnames(),
                                                  c.confidence()));
         }
@@ -374,7 +410,7 @@ public class ControllerTest {
 
         // Initial failure
         Instant initialFailure = tester.clock().instant();
-        tester.jobCompletion(component).application(app).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app, true);
         tester.deployAndNotify(app, applicationPackage, false, systemTest);
         assertEquals("Failure age is right at initial failure",
                      initialFailure.plus(Duration.ofMillis(2)), firstFailing(app, tester).get().at());
@@ -398,7 +434,7 @@ public class ControllerTest {
         // Initial failure
         tester.clock().advance(Duration.ofMillis(1000));
         initialFailure = tester.clock().instant();
-        tester.jobCompletion(component).application(app).submit();
+        tester.notifyJobCompletion(component, app, true);
         tester.deployAndNotify(app, applicationPackage, false, systemTest);
         assertEquals("Failure age is right at initial failure",
                      initialFailure.plus(Duration.ofMillis(2)), firstFailing(app, tester).get().at());
@@ -462,29 +498,26 @@ public class ControllerTest {
         Application app1 = tester.createApplication("app1", "tenant1", project1, 1L);
         Application app2 = tester.createApplication("app2", "tenant2", project2, 1L);
         Application app3 = tester.createApplication("app3", "tenant3", project3, 1L);
-        DeploymentQueue deploymentQueue = tester.controller().applications().deploymentTrigger().deploymentQueue();
+        BuildSystem buildSystem = tester.controller().applications().deploymentTrigger().buildSystem();
 
         // all applications: system-test completes successfully
-        tester.jobCompletion(component).application(app1).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app1, true);
         tester.deployAndNotify(app1, applicationPackage, true, systemTest);
 
-        tester.jobCompletion(component).application(app2).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app2, true);
         tester.deployAndNotify(app2, applicationPackage, true, systemTest);
 
-        tester.jobCompletion(component).application(app3).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app3, true);
         tester.deployAndNotify(app3, applicationPackage, true, systemTest);
 
         // all applications: staging test jobs queued
-        assertEquals(3, deploymentQueue.jobs().size());
+        assertEquals(3, buildSystem.jobs().size());
 
         // app1: staging-test job fails with out of capacity and is added to the front of the queue
         tester.deploy(stagingTest, app1, applicationPackage);
-        tester.jobCompletion(stagingTest)
-              .application(app1)
-              .error(JobError.outOfCapacity)
-              .submit();
-        assertEquals(stagingTest.jobName(), deploymentQueue.jobs().get(0).jobName());
-        assertEquals(project1, deploymentQueue.jobs().get(0).projectId());
+        tester.notifyJobCompletion(stagingTest, app1, Optional.of(JobError.outOfCapacity));
+        assertEquals(stagingTest.jobName(), buildSystem.jobs().get(0).jobName());
+        assertEquals(project1, buildSystem.jobs().get(0).projectId());
 
         // app2 and app3: Completes deployment
         tester.deployAndNotify(app2, applicationPackage, true, stagingTest);
@@ -495,34 +528,42 @@ public class ControllerTest {
         // app1: 15 minutes pass, staging-test job is still failing due out of capacity, but is no longer re-queued by
         // out of capacity retry mechanism
         tester.clock().advance(Duration.ofMinutes(15));
-        tester.jobCompletion(stagingTest).application(app1).error(JobError.outOfCapacity).submit(); // Clear the previous staging test
-        tester.jobCompletion(component).application(app1).buildNumber(43).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(stagingTest, app1, Optional.of(JobError.outOfCapacity)); // Clear the previous staging test
+        tester.notifyJobCompletion(component, app1, true);
         tester.deployAndNotify(app1, applicationPackage, true, false, systemTest);
         tester.deploy(stagingTest, app1, applicationPackage);
-        assertEquals(1, deploymentQueue.takeJobsToRun().size());
-        tester.jobCompletion(stagingTest).application(app1).error(JobError.outOfCapacity).submit();
-        assertTrue("No jobs queued", deploymentQueue.jobs().isEmpty());
+        assertEquals(1, buildSystem.takeJobsToRun().size());
+        tester.notifyJobCompletion(stagingTest, app1, Optional.of(JobError.outOfCapacity));
+        assertTrue("No jobs queued", buildSystem.jobs().isEmpty());
 
         // app2 and app3: New change triggers system-test jobs
         // Provide a changed application package, too, or the deployment is a no-op.
-        tester.jobCompletion(component).application(app2).buildNumber(43).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app2, true);
         tester.deployAndNotify(app2, applicationPackage2, true, systemTest);
 
-        tester.jobCompletion(component).application(app3).buildNumber(43).uploadArtifact(applicationPackage).submit();
+        tester.notifyJobCompletion(component, app3, true);
         tester.deployAndNotify(app3, applicationPackage2, true, systemTest);
 
-        assertEquals(2, deploymentQueue.jobs().size());
+        assertEquals(2, buildSystem.jobs().size());
 
-        // app1: 4 hours pass in total, staging-test job for app1 is re-queued by periodic trigger mechanism and added at the
+        // app1: 4 hours pass in total, staging-test job is re-queued by periodic trigger mechanism and added at the
         // back of the queue
         tester.clock().advance(Duration.ofHours(3));
         tester.clock().advance(Duration.ofMinutes(50));
         tester.readyJobTrigger().maintain();
 
-        assertEquals(Collections.singletonList(new BuildService.BuildJob(project2, stagingTest.jobName())), deploymentQueue.takeJobsToRun());
-        assertEquals(Collections.singletonList(new BuildService.BuildJob(project3, stagingTest.jobName())), deploymentQueue.takeJobsToRun());
-        assertEquals(Collections.singletonList(new BuildService.BuildJob(project1, stagingTest.jobName())), deploymentQueue.takeJobsToRun());
-        assertEquals(Collections.emptyList(), deploymentQueue.takeJobsToRun());
+        List<BuildJob> nextJobs = buildSystem.takeJobsToRun();
+        assertEquals(2, nextJobs.size());
+        assertEquals(stagingTest.jobName(), nextJobs.get(0).jobName());
+        assertEquals(project2, nextJobs.get(0).projectId());
+        assertEquals(stagingTest.jobName(), nextJobs.get(1).jobName());
+        assertEquals(project3, nextJobs.get(1).projectId());
+
+        // And finally the requeued job for app1
+        nextJobs = buildSystem.takeJobsToRun();
+        assertEquals(1, nextJobs.size());
+        assertEquals(stagingTest.jobName(), nextJobs.get(0).jobName());
+        assertEquals(project1, nextJobs.get(0).projectId());
     }
 
     private void assertStatus(JobStatus expectedStatus, ApplicationId id, Controller controller) {
@@ -585,8 +626,7 @@ public class ControllerTest {
         tester.controllerTester().zoneRegistry().setZones(ZoneId.from("prod", "cd-us-central-1"));
 
         Supplier<Map<JobType, JobStatus>> statuses = () ->
-                tester.application(ApplicationId.from("vespa", "canary", "default"))
-                      .deploymentJobs().jobStatus();
+                tester.application(ApplicationId.from("vespa", "canary", "default")).deploymentJobs().jobStatus();
 
         // Current system version, matches version in test data
         Version version = Version.fromString("6.141.117");
@@ -602,7 +642,6 @@ public class ControllerTest {
                 .upgradePolicy("canary")
                 .region("cd-us-central-1")
                 .build();
-        tester.jobCompletion(component).application(application).uploadArtifact(applicationPackage).submit();
 
         long cdJobsCount = statuses.get().keySet().stream()
                         .filter(type -> type.zone(SystemName.cd).isPresent())
@@ -623,9 +662,9 @@ public class ControllerTest {
 
         // Test environments pass
         tester.deploy(DeploymentJobs.JobType.systemTest, application, applicationPackage);
-        tester.deploymentQueue().takeJobsToRun();
+        tester.buildSystem().takeJobsToRun();
         tester.clock().advance(Duration.ofMinutes(10));
-        tester.jobCompletion(systemTest).application(application).submit();
+        tester.notifyJobCompletion(DeploymentJobs.JobType.systemTest, application, true);
 
         long newCdJobsCount = statuses.get().keySet().stream()
                 .filter(type -> type.zone(SystemName.cd).isPresent())
@@ -705,7 +744,7 @@ public class ControllerTest {
                     .environment(Environment.prod)
                     .allow(ValidationId.deploymentRemoval)
                     .build();
-            tester.jobCompletion(component).application(app1).uploadArtifact(applicationPackage).submit();
+            tester.notifyJobCompletion(component, app1, true);
             tester.deployAndNotify(app1, applicationPackage, true, systemTest);
             tester.applications().deactivate(app1, ZoneId.from(Environment.test, RegionName.from("us-east-1")));
             tester.applications().deactivate(app1, ZoneId.from(Environment.staging, RegionName.from("us-east-3")));
@@ -823,20 +862,16 @@ public class ControllerTest {
     }
 
     private void runDeployment(DeploymentTester tester, ApplicationId application, ApplicationVersion version,
-                               ApplicationPackage applicationPackage, SourceRevision sourceRevision, long buildNumber) {
+                               Optional<ApplicationPackage> applicationPackage, Optional<SourceRevision> sourceRevision,
+                               long initialBuildNumber) {
         Application app = tester.applications().require(application);
-        tester.jobCompletion(component)
-              .application(app)
-              .buildNumber(buildNumber)
-              .sourceRevision(sourceRevision)
-              .uploadArtifact(applicationPackage)
-              .submit();
-
-        ApplicationVersion change = ApplicationVersion.from(sourceRevision, buildNumber);
+        tester.notifyJobCompletion(component, app, Optional.empty(), sourceRevision, initialBuildNumber);
+        ApplicationVersion change = sourceRevision.map(sr -> ApplicationVersion.from(sr, initialBuildNumber))
+                                                  .orElse(ApplicationVersion.unknown);
         assertEquals(change.id(), tester.controller().applications()
                                         .require(application)
                                         .change().application().get().id());
-        runDeployment(tester, app, version, Optional.empty(), Optional.of(applicationPackage));
+        runDeployment(tester, app, version, Optional.empty(), applicationPackage);
     }
 
     private void runDeployment(DeploymentTester tester, Application app, ApplicationVersion version,
@@ -847,7 +882,7 @@ public class ControllerTest {
         tester.deployAndNotify(app, applicationPackage, true, true, systemTest);
         tester.deployAndNotify(app, applicationPackage, true, true, stagingTest);
         assertStatus(JobStatus.initial(stagingTest)
-                             .withTriggering(vespaVersion, version, "",
+                             .withTriggering(vespaVersion, version, upgrade.isPresent(), "",
                                              tester.clock().instant().minus(Duration.ofMillis(1)))
                              .withCompletion(42, Optional.empty(), tester.clock().instant(),
                                              tester.controller()), app.id(), tester.controller());
@@ -855,13 +890,13 @@ public class ControllerTest {
         // Deploy in production
         tester.deployAndNotify(app, applicationPackage, true, true, productionCorpUsEast1);
         assertStatus(JobStatus.initial(productionCorpUsEast1)
-                             .withTriggering(vespaVersion, version, "",
+                             .withTriggering(vespaVersion, version, upgrade.isPresent(), "",
                                              tester.clock().instant().minus(Duration.ofMillis(1)))
                              .withCompletion(42, Optional.empty(), tester.clock().instant(),
                                              tester.controller()), app.id(), tester.controller());
         tester.deployAndNotify(app, applicationPackage, true, true, productionUsEast3);
         assertStatus(JobStatus.initial(productionUsEast3)
-                             .withTriggering(vespaVersion, version, "",
+                             .withTriggering(vespaVersion, version, upgrade.isPresent(), "",
                                              tester.clock().instant().minus(Duration.ofMillis(1)))
                              .withCompletion(42, Optional.empty(), tester.clock().instant(),
                                              tester.controller()), app.id(), tester.controller());

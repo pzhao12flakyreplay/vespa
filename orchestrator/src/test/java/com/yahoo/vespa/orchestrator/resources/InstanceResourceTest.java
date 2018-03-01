@@ -4,12 +4,11 @@ package com.yahoo.vespa.orchestrator.resources;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.jrt.slobrok.api.Mirror;
-import com.yahoo.vespa.applicationmodel.ClusterId;
 import com.yahoo.vespa.applicationmodel.ConfigId;
 import com.yahoo.vespa.applicationmodel.ServiceStatus;
 import com.yahoo.vespa.applicationmodel.ServiceType;
 import com.yahoo.vespa.orchestrator.restapi.wire.SlobrokEntryResponse;
-import com.yahoo.vespa.service.monitor.SlobrokApi;
+import com.yahoo.vespa.service.monitor.SlobrokMonitorManager;
 import org.junit.Test;
 
 import javax.ws.rs.WebApplicationException;
@@ -28,13 +27,12 @@ public class InstanceResourceTest {
     private static final List<Mirror.Entry> ENTRIES = Arrays.asList(
             new Mirror.Entry("name1", "spec1"),
             new Mirror.Entry("name2", "spec2"));
-    private static final ClusterId CLUSTER_ID = new ClusterId("cluster-id");
 
-    private final SlobrokApi slobrokApi = mock(SlobrokApi.class);
+    private final SlobrokMonitorManager slobrokMonitorManager = mock(SlobrokMonitorManager.class);
     private final InstanceResource resource = new InstanceResource(
             null,
             null,
-            slobrokApi);
+            slobrokMonitorManager);
 
     @Test
     public void testGetSlobrokEntries() throws Exception {
@@ -51,32 +49,31 @@ public class InstanceResourceTest {
         ServiceType serviceType = new ServiceType("serviceType");
         ConfigId configId = new ConfigId("configId");
         ServiceStatus serviceStatus = ServiceStatus.UP;
-        when(slobrokApi.getStatus(APPLICATION_ID, CLUSTER_ID, serviceType, configId))
+        when(slobrokMonitorManager.getStatus(APPLICATION_ID, serviceType, configId))
                 .thenReturn(serviceStatus);
         ServiceStatus actualServiceStatus = resource.getServiceStatus(
                 APPLICATION_INSTANCE_REFERENCE,
-                CLUSTER_ID.s(),
                 serviceType.s(),
                 configId.s());
-        verify(slobrokApi).getStatus(APPLICATION_ID, CLUSTER_ID, serviceType, configId);
+        verify(slobrokMonitorManager).getStatus(APPLICATION_ID, serviceType, configId);
         assertEquals(serviceStatus, actualServiceStatus);
     }
 
     @Test(expected = WebApplicationException.class)
     public void testBadRequest() {
-        resource.getServiceStatus(APPLICATION_INSTANCE_REFERENCE, CLUSTER_ID.s(), null, null);
+        resource.getServiceStatus(APPLICATION_INSTANCE_REFERENCE, null, null);
     }
 
     private void testGetSlobrokEntriesWith(String pattern, String expectedLookupPattern)
             throws Exception{
-        when(slobrokApi.lookup(APPLICATION_ID, expectedLookupPattern))
+        when(slobrokMonitorManager.lookup(APPLICATION_ID, expectedLookupPattern))
                 .thenReturn(ENTRIES);
 
         List<SlobrokEntryResponse> response = resource.getSlobrokEntries(
                 APPLICATION_INSTANCE_REFERENCE,
                 pattern);
 
-        verify(slobrokApi).lookup(APPLICATION_ID, expectedLookupPattern);
+        verify(slobrokMonitorManager).lookup(APPLICATION_ID, expectedLookupPattern);
 
         ObjectMapper mapper = new ObjectMapper();
         String actualJson = mapper.writeValueAsString(response);

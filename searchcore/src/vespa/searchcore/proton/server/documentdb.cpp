@@ -168,7 +168,7 @@ DocumentDB::DocumentDB(const vespalib::string &baseDir,
     fastos::TimeStamp visibilityDelay = loaded_config->getMaintenanceConfigSP()->getVisibilityDelay();
     _visibility.setVisibilityDelay(visibilityDelay);
     if (_visibility.getVisibilityDelay() > 0) {
-        _writeService.setTaskLimit(_writeServiceConfig.semiUnboundTaskLimit(), _writeServiceConfig.defaultTaskLimit());
+        _writeService.setTaskLimit(_writeServiceConfig.semiUnboundTaskLimit());
     }
 }
 
@@ -234,7 +234,8 @@ public:
     }
 };
 
-InitDoneTask::~InitDoneTask() = default;
+InitDoneTask::~InitDoneTask() {
+}
 
 void
 DocumentDB::initManagers()
@@ -413,9 +414,9 @@ DocumentDB::applyConfig(DocumentDBConfig::SP configSnapshot, SerialNum serialNum
         _visibility.setVisibilityDelay(visibilityDelay);
     }
     if (_visibility.getVisibilityDelay() > 0) {
-        _writeService.setTaskLimit(_writeServiceConfig.semiUnboundTaskLimit(), _writeServiceConfig.defaultTaskLimit());
+        _writeService.setTaskLimit(_writeServiceConfig.semiUnboundTaskLimit());
     } else {
-        _writeService.setTaskLimit(_writeServiceConfig.defaultTaskLimit(), _writeServiceConfig.defaultTaskLimit());
+        _writeService.setTaskLimit(_writeServiceConfig.defaultTaskLimit());
     }
     if (params.shouldSubDbsChange() || hasVisibilityDelayChanged) {
         applySubDBConfig(*configSnapshot, serialNum, params);
@@ -1218,10 +1219,6 @@ updateLidSpaceMetrics(MetricSetType &metrics, const search::IDocumentMetaStore &
 void
 DocumentDB::updateMetrics(DocumentDBMetricsCollection &metrics)
 {
-    if (_state.getState() < DDBState::State::REPLAY_TRANSACTION_LOG) {
-        return;
-    }
-    
     updateLegacyMetrics(metrics.getLegacyMetrics());
     updateIndexMetrics(metrics, _subDBs.getReadySubDB()->getSearchableStats());
     updateAttributeMetrics(metrics, _subDBs);

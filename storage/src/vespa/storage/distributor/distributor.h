@@ -2,27 +2,27 @@
 
 #pragma once
 
-#include "bucket_spaces_stats_provider.h"
-#include "bucketdbupdater.h"
-#include "distributor_host_info_reporter.h"
-#include "distributorinterface.h"
-#include "externaloperationhandler.h"
 #include "idealstatemanager.h"
-#include "min_replica_provider.h"
+#include "bucketdbupdater.h"
 #include "pendingmessagetracker.h"
+#include "externaloperationhandler.h"
+#include "min_replica_provider.h"
+#include "distributorinterface.h"
+
 #include "statusreporterdelegate.h"
-#include <vespa/config/config.h>
+#include "distributor_host_info_reporter.h"
+#include <vespa/storage/distributor/maintenance/maintenancescheduler.h>
+#include <vespa/storage/distributor/bucketdb/bucketdbmetricupdater.h>
 #include <vespa/storage/common/distributorcomponent.h>
 #include <vespa/storage/common/doneinitializehandler.h>
 #include <vespa/storage/common/messagesender.h>
-#include <vespa/storage/distributor/bucketdb/bucketdbmetricupdater.h>
-#include <vespa/storage/distributor/maintenance/maintenancescheduler.h>
 #include <vespa/storageapi/message/state.h>
-#include <vespa/storageframework/generic/metric/metricupdatehook.h>
 #include <vespa/storageframework/generic/thread/tickingthread.h>
+#include <vespa/storageframework/generic/metric/metricupdatehook.h>
+#include <vespa/config/config.h>
 #include <vespa/vespalib/util/sync.h>
-#include <queue>
 #include <unordered_map>
+#include <queue>
 
 namespace storage {
 
@@ -43,8 +43,7 @@ class Distributor : public StorageLink,
                     public StatusDelegator,
                     public framework::StatusReporter,
                     public framework::TickingThread,
-                    public MinReplicaProvider,
-                    public BucketSpacesStatsProvider
+                    public MinReplicaProvider
 {
 public:
     Distributor(DistributorComponentRegister&,
@@ -78,7 +77,7 @@ public:
      * Enables a new cluster state. Called after the bucket db updater has
      * retrieved all bucket info related to the change.
      */
-    void enableClusterStateBundle(const lib::ClusterStateBundle& clusterStateBundle) override;
+    void enableClusterState(const lib::ClusterState& clusterState) override;
 
     /**
      * Invoked when a pending cluster state for a distribution (config)
@@ -114,7 +113,9 @@ public:
      */
     void checkBucketForSplit(document::BucketSpace bucketSpace, const BucketDatabase::Entry& e, uint8_t priority) override;
 
-    const lib::ClusterStateBundle& getClusterStateBundle() const override;
+    const lib::ClusterState& getClusterState() const override {
+        return _clusterState;
+    }
 
     /**
      * @return Returns the states in which the distributors consider
@@ -196,8 +197,6 @@ private:
      */
     std::unordered_map<uint16_t, uint32_t> getMinReplica() const override;
 
-    PerNodeBucketSpacesStats getBucketSpacesStats() const override;
-
     /**
      * Atomically publish internal metrics to external ideal state metrics.
      * Takes metric lock.
@@ -231,9 +230,8 @@ private:
 
     void enableNextDistribution();
     void propagateDefaultDistribution(std::shared_ptr<const lib::Distribution>);
-    void propagateClusterStates();
 
-    lib::ClusterStateBundle _clusterStateBundle;
+    lib::ClusterState _clusterState;
 
     DistributorComponentRegister& _compReg;
     storage::DistributorComponent _component;
@@ -301,7 +299,6 @@ private:
      * manager thread but written by distributor thread.
      */
     SimpleMaintenanceScanner::PendingMaintenanceStats _maintenanceStats;
-    BucketSpacesStatsProvider::PerNodeBucketSpacesStats _bucketSpacesStats;
     BucketDBMetricUpdater::Stats _bucketDbStats;
     DistributorHostInfoReporter _hostInfoReporter;
     std::unique_ptr<OwnershipTransferSafeTimePointCalculator> _ownershipSafeTimeCalc;

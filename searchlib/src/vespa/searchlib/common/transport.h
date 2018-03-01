@@ -12,7 +12,6 @@ namespace search::fs4transport {
  * are as follows:
  * <ul>
  *  <li><b>QFLAG_EXTENDED_COVERAGE</b>: Indicates that the it is able to receive extended coverage information.</li>
- *  <li><b>QFLAG_COVERAGE_NODES</b>: Indicate that it is able to handle nodes information.</li>
  *  <li><b>QFLAG_ESTIMATE</b>: Indicates that the  query is performed to get
  *                             an estimate of the total number of hits</li>
  *  <li><b>QFLAG_DUMP_FEATURES</b>: Dump detailed ranking information. Note that
@@ -26,7 +25,6 @@ namespace search::fs4transport {
  **/
 enum queryflags {
     QFLAG_EXTENDED_COVERAGE    = 0x00000001,
-    QFLAG_COVERAGE_NODES       = 0x00000002,
     QFLAG_ESTIMATE             = 0x00000080,
     QFLAG_DROP_SORTDATA        = 0x00004000,
     QFLAG_NO_RESULTCACHE       = 0x00010000,
@@ -48,7 +46,6 @@ enum queryflags {
  **/
 enum queryresult_features {
     QRF_MLD                   = 0x00000001,
-    QRF_COVERAGE_NODES        = 0x00000002,
     QRF_SORTDATA              = 0x00000010,
     QRF_EXTENDED_COVERAGE     = 0x00000020,
     QRF_COVERAGE              = 0x00000040,

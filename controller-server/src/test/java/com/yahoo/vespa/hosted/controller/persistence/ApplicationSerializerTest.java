@@ -73,10 +73,10 @@ public class ApplicationSerializerTest {
         List<JobStatus> statusList = new ArrayList<>();
 
         statusList.add(JobStatus.initial(DeploymentJobs.JobType.systemTest)
-                                .withTriggering(Version.fromString("5.6.7"), ApplicationVersion.unknown, "Test", Instant.ofEpochMilli(7))
+                                .withTriggering(Version.fromString("5.6.7"), ApplicationVersion.unknown, true, "Test", Instant.ofEpochMilli(7))
                                 .withCompletion(30, Optional.empty(), Instant.ofEpochMilli(8), tester.controller()));
         statusList.add(JobStatus.initial(DeploymentJobs.JobType.stagingTest)
-                                .withTriggering(Version.fromString("5.6.6"), ApplicationVersion.unknown, "Test 2", Instant.ofEpochMilli(5))
+                                .withTriggering(Version.fromString("5.6.6"), ApplicationVersion.unknown, true, "Test 2", Instant.ofEpochMilli(5))
                                 .withCompletion(11, Optional.of(JobError.unknown), Instant.ofEpochMilli(6), tester.controller()));
 
         DeploymentJobs deploymentJobs = new DeploymentJobs(projectId, statusList, Optional.empty());
@@ -148,13 +148,14 @@ public class ApplicationSerializerTest {
         assertEquals(6, serialized.deployments().get(zone2).metrics().writeLatencyMillis(), Double.MIN_VALUE);
 
         { // test more deployment serialization cases
-            Application original2 = writable(original).withChange(Change.of(ApplicationVersion.from(new SourceRevision("repo1", "branch1", "commit1"), 42)));
+            Application original2 = writable(original).withChange(Change.of(ApplicationVersion.from("hash1")));
             Application serialized2 = applicationSerializer.fromSlime(applicationSerializer.toSlime(original2));
             assertEquals(original2.change(), serialized2.change());
             assertEquals(serialized2.change().application().get().source(),
                          original2.change().application().get().source());
 
-            Application original3 = writable(original).withChange(Change.of(ApplicationVersion.from(new SourceRevision("a", "b", "c"), 42)));
+            Application original3 = writable(original).withChange(Change.of(ApplicationVersion.from("hash1",
+                                                                                                    new SourceRevision("a", "b", "c"))));
             Application serialized3 = applicationSerializer.fromSlime(applicationSerializer.toSlime(original3));
             assertEquals(original3.change(), serialized3.change());
             assertEquals(serialized3.change().application().get().source(),
@@ -163,11 +164,11 @@ public class ApplicationSerializerTest {
             Application serialized4 = applicationSerializer.fromSlime(applicationSerializer.toSlime(original4));
             assertEquals(original4.change(), serialized4.change());
 
-            Application original5 = writable(original).withChange(Change.of(ApplicationVersion.from(new SourceRevision("a", "b", "c"), 42)));
+            Application original5 = writable(original).withChange(Change.of(ApplicationVersion.unknown));
             Application serialized5 = applicationSerializer.fromSlime(applicationSerializer.toSlime(original5));
             assertEquals(original5.change(), serialized5.change());
 
-            Application original6 = writable(original).withOutstandingChange(Change.of(ApplicationVersion.from(new SourceRevision("a", "b", "c"), 42)));
+            Application original6 = writable(original).withOutstandingChange(Change.of(ApplicationVersion.unknown));
             Application serialized6 = applicationSerializer.fromSlime(applicationSerializer.toSlime(original6));
             assertEquals(original6.outstandingChange(), serialized6.outstandingChange());
         }
@@ -210,6 +211,12 @@ public class ApplicationSerializerTest {
 
         Application applicationWithFailingJob = applicationSerializer.fromSlime(applicationSlime(true));
         assertEquals(JobError.unknown, applicationWithFailingJob.deploymentJobs().jobStatus().get(DeploymentJobs.JobType.systemTest).jobError().get());
+    }
+
+    @Test
+    public void testLegacySerializationWithoutUpgradeField() {
+        Application application = applicationSerializer.fromSlime(applicationSlime(false));
+        assertFalse(application.deploymentJobs().jobStatus().get(DeploymentJobs.JobType.systemTest).lastCompleted().get().upgrade());
     }
 
     @Test

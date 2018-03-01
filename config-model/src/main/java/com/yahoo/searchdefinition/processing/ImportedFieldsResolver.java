@@ -32,14 +32,14 @@ public class ImportedFieldsResolver extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        search.temporaryImportedFields().get().fields().forEach((name, field) -> resolveImportedField(field, validate));
+    public void process() {
+        search.temporaryImportedFields().get().fields().forEach((name, field) -> resolveImportedField(field));
         search.setImportedFields(new ImportedFields(importedFields));
     }
 
-    private void resolveImportedField(TemporaryImportedField importedField, boolean validate) {
+    private void resolveImportedField(TemporaryImportedField importedField) {
         DocumentReference reference = validateDocumentReference(importedField);
-        SDField targetField = validateTargetField(importedField, reference, validate);
+        SDField targetField = validateTargetField(importedField, reference);
         importedFields.put(importedField.fieldName(), new ImportedField(importedField.fieldName(), reference, targetField));
     }
 
@@ -52,27 +52,19 @@ public class ImportedFieldsResolver extends Processor {
         return reference;
     }
 
-    private SDField validateTargetField(TemporaryImportedField importedField,
-                                        DocumentReference reference,
-                                        boolean validate) {
+    private SDField validateTargetField(TemporaryImportedField importedField, DocumentReference reference) {
         String targetFieldName = importedField.targetFieldName();
         Search targetSearch = reference.targetSearch();
-        if (validate && isImportedField(targetSearch, targetFieldName)) {
-            fail(importedField, targetFieldAsString(targetFieldName, reference) +
-                                ": Is an imported field. Not supported");
+        if (isImportedField(targetSearch, targetFieldName)) {
+            fail(importedField, targetFieldAsString(targetFieldName, reference) + ": Is an imported field. Not supported");
         }
         SDField targetField = targetSearch.getConcreteField(targetFieldName);
         if (targetField == null) {
-            fail(importedField, targetFieldAsString(targetFieldName, reference) +
-                                ": Not found");
+            fail(importedField, targetFieldAsString(targetFieldName, reference) + ": Not found");
         } else if (!targetField.doesAttributing()) {
-            if (validate)
-                fail(importedField, targetFieldAsString(targetFieldName, reference) +
-                                    ": Is not an attribute field. Only attribute fields supported");
+            fail(importedField, targetFieldAsString(targetFieldName, reference) + ": Is not an attribute field. Only attribute fields supported");
         } else if (targetField.doesIndexing()) {
-            if (validate)
-                fail(importedField, targetFieldAsString(targetFieldName, reference) +
-                                    ": Is an index field. Not supported");
+            fail(importedField, targetFieldAsString(targetFieldName, reference) + ": Is an index field. Not supported");
         }
         return targetField;
     }

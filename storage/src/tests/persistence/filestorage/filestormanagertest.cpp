@@ -7,7 +7,6 @@
 #include <vespa/document/test/make_document_bucket.h>
 #include <vespa/storage/storageserver/statemanager.h>
 #include <vespa/storage/bucketdb/bucketmanager.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/storage/persistence/persistencethread.h>
 #include <vespa/storage/persistence/filestorage/filestormanager.h>
 #include <vespa/storage/persistence/filestorage/modifiedbucketchecker.h>
@@ -178,11 +177,9 @@ struct FileStorManagerTest : public CppUnit::TestFixture {
     bool ownsBucket(uint16_t distributorIndex,
                     const document::BucketId& bucket) const
     {
-        auto clusterStateBundle = _node->getStateUpdater().getClusterStateBundle();
-        const auto &clusterState = *clusterStateBundle->getBaselineClusterState();
         uint16_t distributor(
                 _node->getDistribution()->getIdealDistributorNode(
-                        clusterState, bucket));
+                        *_node->getStateUpdater().getSystemState(), bucket));
         return distributor == distributorIndex;
     }
     

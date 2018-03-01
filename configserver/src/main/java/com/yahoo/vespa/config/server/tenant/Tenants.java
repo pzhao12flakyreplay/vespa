@@ -19,7 +19,6 @@ import org.apache.curator.framework.state.ConnectionState;
 import org.apache.curator.framework.state.ConnectionStateListener;
 import org.apache.zookeeper.KeeperException;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -30,8 +29,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -46,7 +43,7 @@ import java.util.logging.Logger;
  * To create or delete a tenant, the handler calls {@link Tenants#addTenant} and {@link Tenants#deleteTenant} methods.
  * This will delete shared state from zookeeper, and return, so it does not mean a tenant is immediately deleted.
  *
- * Once a tenant is deleted from zookeeper, the zookeeper watcher thread will get notified on all config servers, and
+ * Once a tenant is deleted from zookeeper, the zookeeper watcher thread will get notified on all configservers, and
  * shutdown and delete any per-configserver state.
  *
  * @author Vegard Havdal
@@ -60,7 +57,7 @@ public class Tenants implements ConnectionStateListener, PathChildrenCacheListen
 
     private static final Path tenantsPath = Path.fromString("/config/v2/tenants/");
     private static final Path vespaPath = Path.fromString("/vespa");
-    private static final Duration checkForRemovedApplicationsInterval = Duration.ofMinutes(1);
+
     private static final Logger log = Logger.getLogger(Tenants.class.getName());
 
     private final Map<TenantName, Tenant> tenants = new LinkedHashMap<>();
@@ -70,7 +67,6 @@ public class Tenants implements ConnectionStateListener, PathChildrenCacheListen
 
     private final MetricUpdater metricUpdater;
     private final ExecutorService pathChildrenExecutor = Executors.newFixedThreadPool(1, ThreadFactoryFactory.getThreadFactory(Tenants.class.getName()));
-    private final ScheduledExecutorService checkForRemovedApplicationsService = new ScheduledThreadPoolExecutor(1);
     private final Curator.DirectoryCache directoryCache;
 
 
@@ -94,14 +90,10 @@ public class Tenants implements ConnectionStateListener, PathChildrenCacheListen
         this.directoryCache = curator.createDirectoryCache(tenantsPath.getAbsolute(), false, false, pathChildrenExecutor);
         directoryCache.start();
         directoryCache.addListener(this);
-        log.log(LogLevel.DEBUG, "Creating all tenants");
+        log.log(LogLevel.INFO, "Creating all tenants"); // TODO: Change to debug
         createTenants();
         notifyTenantsLoaded();
-        log.log(LogLevel.DEBUG, "All tenants created");
-        checkForRemovedApplicationsService.scheduleWithFixedDelay(this::removeUnusedApplications,
-                                                                  checkForRemovedApplicationsInterval.getSeconds(),
-                                                                  checkForRemovedApplicationsInterval.getSeconds(),
-                                                                  TimeUnit.SECONDS);
+        log.log(LogLevel.INFO, "All tenants created"); // TODO: Change to debug
     }
 
     /**
@@ -205,11 +197,6 @@ public class Tenants implements ConnectionStateListener, PathChildrenCacheListen
      */
     public synchronized Tenant defaultTenant() {
         return tenants.get(DEFAULT_TENANT);
-    }
-
-
-    private void removeUnusedApplications() {
-        getAllTenants().forEach(tenant -> tenant.getApplicationRepo().removeUnusedApplications());
     }
 
     private void notifyNewTenant(Tenant tenant) {
@@ -341,7 +328,6 @@ public class Tenants implements ConnectionStateListener, PathChildrenCacheListen
     public void close() {
         directoryCache.close();
         pathChildrenExecutor.shutdown();
-        checkForRemovedApplicationsService.shutdown();
     }
 
     public boolean checkThatTenantExists(TenantName tenant) {

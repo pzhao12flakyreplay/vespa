@@ -13,7 +13,7 @@ import com.yahoo.vespa.indexinglanguage.expressions.OutputExpression;
 import com.yahoo.vespa.model.container.search.QueryProfiles;
 
 /**
- * @author Simon Thoresen Hult
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen Hult</a>
  */
 public class IndexingValues extends Processor {
 
@@ -22,12 +22,10 @@ public class IndexingValues extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (Field field : search.getDocument().fieldSet()) {
             SDField sdField = (SDField)field;
-            if ( ! sdField.isExtraField()) {
+            if (!sdField.isExtraField()) {
                 new RequireThatDocumentFieldsAreImmutable(field).convert(sdField.getIndexingScript());
             }
         }

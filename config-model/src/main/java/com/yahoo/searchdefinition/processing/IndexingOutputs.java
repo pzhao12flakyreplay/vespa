@@ -16,11 +16,11 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
 import java.util.*;
 
 /**
- * This processor modifies all indexing scripts so that they output to the owning field by default. It also prevents
+ * <p>This processor modifies all indexing scripts so that they output to the owning field by default. It also prevents
  * any output expression from writing to any field except for the owning field. Finally, for <tt>SummaryExpression</tt>,
- * this processor expands to write all appropriate summary fields.
+ * this processor expands to write all appropriate summary fields.</p>
  *
- * @author Simon Thoresen
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen</a>
  */
 public class IndexingOutputs extends Processor {
 
@@ -29,19 +29,21 @@ public class IndexingOutputs extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             ScriptExpression script = field.getIndexingScript();
-            if (script == null) continue;
-
+            if (script == null) {
+                continue;
+            }
             Set<String> summaryFields = new TreeSet<>();
             findSummaryTo(search, field, summaryFields, summaryFields);
-            MyConverter converter = new MyConverter(search, field, summaryFields, validate);
+            MyConverter converter = new MyConverter(search, field, summaryFields);
             field.setIndexingScript((ScriptExpression)converter.convert(script));
         }
     }
 
-    public void findSummaryTo(Search search, SDField field, Set<String> dynamicSummary, Set<String> staticSummary) {
+    public void findSummaryTo(Search search, SDField field, Set<String> dynamicSummary,
+                                     Set<String> staticSummary) {
         Map<String, SummaryField> summaryFields = search.getSummaryFields(field);
         if (summaryFields.isEmpty()) {
             fillSummaryToFromField(field, dynamicSummary, staticSummary);
@@ -57,8 +59,7 @@ public class IndexingOutputs extends Processor {
         }
     }
 
-    private void fillSummaryToFromSummaryField(Search search, SDField field, SummaryField summaryField,
-                                               Set<String> dynamicSummary, Set<String> staticSummary) {
+    private void fillSummaryToFromSummaryField(Search search, SDField field, SummaryField summaryField, Set<String> dynamicSummary, Set<String> staticSummary) {
         SummaryTransform summaryTransform = summaryField.getTransform();
         String summaryName = summaryField.getName();
         if (summaryTransform.isDynamic() && summaryField.getSourceCount() > 2) {
@@ -97,25 +98,23 @@ public class IndexingOutputs extends Processor {
         final Search search;
         final Field field;
         final Set<String> summaryFields;
-        final boolean validate;
 
-        MyConverter(Search search, Field field, Set<String> summaryFields, boolean validate) {
+        MyConverter(Search search, Field field, Set<String> summaryFields) {
             this.search = search;
             this.field = field;
             this.summaryFields = summaryFields.isEmpty() ? Collections.singleton(field.getName()) : summaryFields;
-            this.validate = validate;
         }
 
         @Override
         protected boolean shouldConvert(Expression exp) {
-            if ( ! (exp instanceof OutputExpression)) {
+            if (!(exp instanceof OutputExpression)) {
                 return false;
             }
             String fieldName = ((OutputExpression)exp).getFieldName();
             if (fieldName == null) {
                 return true; // inject appropriate field name
             }
-            if ( validate && ! fieldName.equals(field.getName())) {
+            if (!fieldName.equals(field.getName())) {
                 fail(search, field, "Indexing expression '" + exp + "' attempts to write to a field other than '" +
                                     field.getName() + "'.");
             }
@@ -138,7 +137,5 @@ public class IndexingOutputs extends Processor {
             }
             return new StatementExpression(ret);
         }
-
     }
-
 }

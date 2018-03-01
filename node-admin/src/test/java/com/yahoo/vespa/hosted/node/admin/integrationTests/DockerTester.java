@@ -14,17 +14,15 @@ import com.yahoo.vespa.hosted.node.admin.nodeadmin.NodeAdminImpl;
 import com.yahoo.vespa.hosted.node.admin.nodeadmin.NodeAdminStateUpdaterImpl;
 import com.yahoo.vespa.hosted.node.admin.nodeagent.NodeAgent;
 import com.yahoo.vespa.hosted.node.admin.nodeagent.NodeAgentImpl;
-import com.yahoo.vespa.hosted.node.admin.component.Environment;
+import com.yahoo.vespa.hosted.node.admin.util.Environment;
 import com.yahoo.vespa.hosted.node.admin.util.InetAddressResolver;
-import com.yahoo.vespa.hosted.node.admin.component.PathResolver;
+import com.yahoo.vespa.hosted.node.admin.util.PathResolver;
 
 import java.net.InetAddress;
 import java.net.UnknownHostException;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.Clock;
 import java.time.Duration;
-import java.util.Optional;
 import java.util.function.Function;
 
 import static org.mockito.Matchers.any;
@@ -38,8 +36,6 @@ import static org.mockito.Mockito.when;
 public class DockerTester implements AutoCloseable {
     private static final Duration NODE_AGENT_SCAN_INTERVAL = Duration.ofMillis(100);
     private static final Duration NODE_ADMIN_CONVERGE_STATE_INTERVAL = Duration.ofMillis(10);
-    private static final Path pathToVespaHome = Paths.get("/opt/vespa");
-    static final String NODE_PROGRAM = pathToVespaHome.resolve("bin/vespa-nodectl").toString();
 
     final CallOrderVerifier callOrderVerifier = new CallOrderVerifier();
     final Docker dockerMock = new DockerMock(callOrderVerifier);
@@ -59,11 +55,7 @@ public class DockerTester implements AutoCloseable {
 
         Environment environment = new Environment.Builder()
                 .inetAddressResolver(inetAddressResolver)
-                .region("us-east-1")
-                .environment("prod")
-                .system("main")
-                .pathResolver(new PathResolver(pathToVespaHome, Paths.get("/tmp"), Paths.get("/tmp")))
-                .build();
+                .pathResolver(new PathResolver(Paths.get("/tmp"), Paths.get("/tmp"))).build();
         Clock clock = Clock.systemUTC();
         DockerOperations dockerOperations = new DockerOperationsImpl(dockerMock, environment, null);
         StorageMaintainerMock storageMaintainer = new StorageMaintainerMock(dockerOperations, null, environment, callOrderVerifier, clock);
@@ -75,8 +67,7 @@ public class DockerTester implements AutoCloseable {
                 orchestratorMock, dockerOperations, storageMaintainer, aclMaintainer, environment, clock, NODE_AGENT_SCAN_INTERVAL);
         nodeAdmin = new NodeAdminImpl(dockerOperations, nodeAgentFactory, storageMaintainer, aclMaintainer, mr, Clock.systemUTC());
         nodeAdminStateUpdater = new NodeAdminStateUpdaterImpl(nodeRepositoryMock, orchestratorMock, storageMaintainer,
-                nodeAdmin, "basehostname", clock, NODE_ADMIN_CONVERGE_STATE_INTERVAL,
-                Optional.of(new ClassLocking()));
+                nodeAdmin, "basehostname", clock, NODE_ADMIN_CONVERGE_STATE_INTERVAL, new ClassLocking());
         nodeAdminStateUpdater.start();
     }
 

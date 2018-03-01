@@ -17,12 +17,9 @@
 #include <vespa/vdstestlib/cppunit/macros.h>
 #include <vespa/storage/bucketdb/lockablemap.hpp>
 #include <vespa/vdstestlib/cppunit/dirconfig.hpp>
-#include <vespa/document/bucket/fixed_bucket_spaces.h>
 
 #include <vespa/log/log.h>
 LOG_SETUP(".test.bucketdb.initializing");
-
-using document::FixedBucketSpaces;
 
 namespace storage {
 
@@ -447,12 +444,10 @@ struct FakePersistenceLayer : public StorageLink {
                         << " for which we should not get a request";
                     fatal(ost.str());
                 } else {
-                    if (cmd.getBucket().getBucketSpace() == FixedBucketSpaces::default_space()) {
-                        for (DiskData::const_iterator it2 = it->second.begin();
-                             it2 != it->second.end(); ++it2)
-                        {
-                            reply->getBuckets().push_back(it2->first);
-                        }
+                    for (DiskData::const_iterator it2 = it->second.begin();
+                         it2 != it->second.end(); ++it2)
+                    {
+                        reply->getBuckets().push_back(it2->first);
                     }
                 }
                 if (!fatalError.empty()) {

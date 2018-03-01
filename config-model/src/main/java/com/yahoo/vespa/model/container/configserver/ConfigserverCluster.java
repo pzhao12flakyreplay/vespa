@@ -135,8 +135,17 @@ public class ConfigserverCluster extends AbstractConfigProducer
         if (options.numParallelTenantLoaders().isPresent()) {
             builder.numParallelTenantLoaders(options.numParallelTenantLoaders().get());
         }
+        if (options.dockerRegistry().isPresent()) {
+            builder.dockerRegistry(options.dockerRegistry().get());
+        }
+        if (options.dockerVespaBaseImage().isPresent()) {
+            builder.dockerVespaBaseImage(options.dockerVespaBaseImage().get());
+        }
         if (options.loadBalancerAddress().isPresent()) {
             builder.loadBalancerAddress(options.loadBalancerAddress().get());
+        }
+        if (options.disableFiledistributor().isPresent()) {
+            builder.disableFiledistributor(options.disableFiledistributor().get());
         }
     }
 

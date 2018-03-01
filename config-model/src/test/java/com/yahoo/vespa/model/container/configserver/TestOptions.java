@@ -19,6 +19,7 @@ public class TestOptions implements CloudConfigOptions {
     private Optional<Boolean> useVespaVersionInRequest = Optional.empty();
     private Optional<Boolean> hostedVespa = Optional.empty();
     private Optional<Integer> numParallelTenantLoaders = Optional.empty();
+    private Optional<Boolean> disableFiledistributor = Optional.empty();
 
     @Override
     public Optional<Integer> rpcPort() {
@@ -109,7 +110,16 @@ public class TestOptions implements CloudConfigOptions {
     public Optional<Integer> numParallelTenantLoaders() { return numParallelTenantLoaders; }
 
     @Override
+    public Optional<String> dockerRegistry() { return Optional.empty(); }
+
+    @Override
+    public Optional<String> dockerVespaBaseImage() { return Optional.empty(); }
+
+    @Override
     public Optional<String> loadBalancerAddress() { return Optional.empty(); }
+
+    @Override
+    public Optional<Boolean> disableFiledistributor() { return disableFiledistributor; }
 
     public TestOptions numParallelTenantLoaders(int numLoaders) {
         this.numParallelTenantLoaders = Optional.of(numLoaders);

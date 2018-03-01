@@ -51,7 +51,7 @@ public class ReservedMacroNamesTestCase {
                         "        }\n" +
                         "    }\n" +
                         "}\n");
-        builder.build(true, deployLogger);
+        builder.build(deployLogger);
 
         assertTrue(deployLogger.log.contains("sigmoid") && deployLogger.log.contains("test_rank_profile"));
         assertTrue(deployLogger.log.contains("sigmoid") && deployLogger.log.contains("test_rank_profile_2"));

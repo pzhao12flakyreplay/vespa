@@ -14,8 +14,8 @@ import java.util.Iterator;
  * Fail if:
  * 1) There are index: settings without explicit index names (name same as field name)
  * 2) All the index-to indexes differ from the field name.
+ * @author vegardh
  *
- * @author Vegard Havdal
  */
 public class IndexSettingsNonFieldNames extends Processor {
 
@@ -24,9 +24,7 @@ public class IndexSettingsNonFieldNames extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             boolean fieldNameUsed = false;
             for (Iterator i = field.getFieldNameAsIterator(); i.hasNext();) {
@@ -35,12 +33,11 @@ public class IndexSettingsNonFieldNames extends Processor {
                     fieldNameUsed = true;
                 }
             }
-            if ( ! fieldNameUsed) {
+            if (!fieldNameUsed) {
                 for (Index index : field.getIndices().values()) {
                     if (index.getName().equals(field.getName())) {
                         throw new IllegalArgumentException("Error in " + field + " in " + search +
-                                                           ": When all index names differ from field name, index " +
-                                                           "parameter settings must specify index name explicitly.");
+                        ": When all index names differ from field name, index parameter settings must specify index name explicitly.");
                     }
                 }
             }

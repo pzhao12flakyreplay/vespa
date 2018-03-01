@@ -9,7 +9,6 @@
 #include <vespa/storageapi/messageapi/storagemessage.h>
 #include <vespa/storage/storageserver/storagemetricsset.h>
 #include <vespa/storage/common/bucketoperationlogger.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <sys/types.h>
 #include <unistd.h>
 #include <vespa/vespalib/util/stringfmt.h>
@@ -37,7 +36,7 @@ StateManager::StateManager(StorageComponentRegister& compReg,
       _notifyingListeners(false),
       _nodeState(new lib::NodeState(_component.getNodeType(), lib::State::INITIALIZING)),
       _nextNodeState(),
-      _systemState(std::make_shared<const ClusterStateBundle>(lib::ClusterState())),
+      _systemState(new lib::ClusterState),
       _nextSystemState(),
       _stateListeners(),
       _queuedStateRequests(),
@@ -145,11 +144,10 @@ StateManager::reportHtmlStatus(std::ostream& out,
 
     {
         vespalib::LockGuard lock(_stateLock);
-        const auto &baseLineClusterState = _systemState->getBaselineClusterState();
         out << "<h1>Current system state</h1>\n"
-            << "<code>" << baseLineClusterState->toString(true) << "</code>\n"
+            << "<code>" << _systemState->toString(true) << "</code>\n"
             << "<h1>Current node state</h1>\n"
-            << "<code>" << baseLineClusterState->getNodeState(lib::Node(
+            << "<code>" << _systemState->getNodeState(lib::Node(
                         _component.getNodeType(), _component.getIndex())
                                                      ).toString(true)
             << "</code>\n"
@@ -165,7 +163,7 @@ StateManager::reportHtmlStatus(std::ostream& out,
              it != _systemStateHistory.rend(); ++it)
         {
             out << "<tr><td>" << it->first << "</td><td>"
-                << *it->second->getBaselineClusterState() << "</td></tr>\n";
+                << *it->second << "</td></tr>\n";
         }
         out << "</table>\n";
     }
@@ -188,12 +186,12 @@ lib::NodeState::CSP
 StateManager::getCurrentNodeState() const
 {
     vespalib::LockGuard lock(_stateLock);
-    return std::make_shared<const lib::NodeState>
-        (_systemState->getBaselineClusterState()->getNodeState(thisNode()));
+    return lib::NodeState::SP(new lib::NodeState(
+            _systemState->getNodeState(thisNode())));
 }
 
-std::shared_ptr<const lib::ClusterStateBundle>
-StateManager::getClusterStateBundle() const
+lib::ClusterState::CSP
+StateManager::getSystemState() const
 {
     vespalib::LockGuard lock(_stateLock);
     return _systemState;
@@ -361,12 +359,12 @@ StateManager::enableNextClusterState()
 
 void
 StateManager::logNodeClusterStateTransition(
-        const ClusterStateBundle& currentState,
-        const ClusterStateBundle& newState) const
+        const lib::ClusterState& currentState,
+        const lib::ClusterState& newState) const
 {
     lib::Node self(thisNode());
-    const lib::State& before(currentState.getBaselineClusterState()->getNodeState(self).getState());
-    const lib::State& after(newState.getBaselineClusterState()->getNodeState(self).getState());
+    const lib::State& before(currentState.getNodeState(self).getState());
+    const lib::State& after(newState.getNodeState(self).getState());
     if (before != after) {
         LOG(info, "Transitioning from state '%s' to '%s' "
                   "(cluster state version %u)",
@@ -425,7 +423,7 @@ StateManager::setClusterState(const lib::ClusterState& c)
 {
     {
         vespalib::LockGuard lock(_stateLock);
-        _nextSystemState = std::make_shared<const ClusterStateBundle>(c);
+        _nextSystemState.reset(new lib::ClusterState(c));
     }
     notifyStateListeners();
 }

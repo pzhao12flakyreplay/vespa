@@ -10,7 +10,8 @@
 #include <algorithm>
 #include <vector>
 
-namespace proton::matching {
+namespace proton {
+namespace matching {
 
 /**
  * A range of document ids representing a subset of the search space.
@@ -204,4 +205,5 @@ public:
     DocidRange share_range(size_t, DocidRange todo) override;
 };
 
-}
+} // namespace proton::matching
+} // namespace proton

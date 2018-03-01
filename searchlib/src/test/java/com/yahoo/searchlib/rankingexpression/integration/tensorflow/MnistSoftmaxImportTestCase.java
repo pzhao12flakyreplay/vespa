@@ -20,17 +20,17 @@ public class MnistSoftmaxImportTestCase {
         TestableTensorFlowModel model = new TestableTensorFlowModel("src/test/files/integration/tensorflow/mnist_softmax/saved");
 
         // Check constants
-        assertEquals(2, model.get().largeConstants().size());
+        assertEquals(2, model.get().constants().size());
 
-        Tensor constant0 = model.get().largeConstants().get("Variable_read");
+        Tensor constant0 = model.get().constants().get("Variable");
         assertNotNull(constant0);
-        assertEquals(new TensorType.Builder().indexed("d2", 784).indexed("d1", 10).build(),
+        assertEquals(new TensorType.Builder().indexed("d0", 784).indexed("d1", 10).build(),
                      constant0.type());
         assertEquals(7840, constant0.size());
 
-        Tensor constant1 = model.get().largeConstants().get("Variable_1_read");
+        Tensor constant1 = model.get().constants().get("Variable_1");
         assertNotNull(constant1);
-        assertEquals(new TensorType.Builder().indexed("d1", 10).build(),
+        assertEquals(new TensorType.Builder().indexed("d0", 10).build(),
                      constant1.type());
         assertEquals(10, constant1.size());
 
@@ -59,10 +59,12 @@ public class MnistSoftmaxImportTestCase {
         RankingExpression output = signature.outputExpression("y");
         assertNotNull(output);
         assertEquals("add", output.getName());
-        assertEquals("join(reduce(join(rename(Placeholder, (d0, d1), (d0, d2)), constant(\"Variable_read\"), f(a,b)(a * b)), sum, d2), constant(\"Variable_1_read\"), f(a,b)(a + b))",
+        assertEquals("join(rename(reduce(join(Placeholder, rename(constant(\"Variable\"), (d0, d1), (d1, d3)), f(a,b)(a * b)), sum, d1), d3, d1), rename(constant(\"Variable_1\"), d0, d1), f(a,b)(a + b))",
                      output.getRoot().toString());
 
         // Test execution
+        model.assertEqualResult("Placeholder", "Variable/read");
+        model.assertEqualResult("Placeholder", "Variable_1/read");
         model.assertEqualResult("Placeholder", "MatMul");
         model.assertEqualResult("Placeholder", "add");
     }

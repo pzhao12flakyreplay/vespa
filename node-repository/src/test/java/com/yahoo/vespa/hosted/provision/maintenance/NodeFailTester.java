@@ -1,7 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
-import com.yahoo.cloud.config.ConfigserverConfig;
 import com.yahoo.component.Version;
 import com.yahoo.config.provision.ApplicationId;
 import com.yahoo.config.provision.ApplicationName;
@@ -25,7 +24,6 @@ import com.yahoo.vespa.curator.transaction.CuratorTransaction;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeRepository;
 import com.yahoo.vespa.hosted.provision.monitoring.MetricsReporterTest;
-import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.provisioning.FlavorConfigBuilder;
 import com.yahoo.vespa.hosted.provision.provisioning.NodeRepositoryProvisioner;
 import com.yahoo.vespa.hosted.provision.testutils.MockDeployer;
@@ -71,29 +69,19 @@ public class NodeFailTester {
     private final Orchestrator orchestrator;
     private final NodeRepositoryProvisioner provisioner;
     private final Curator curator;
-    private final ConfigserverConfig configserverConfig;
 
     private NodeFailTester() {
-        this(new ConfigserverConfig(new ConfigserverConfig.Builder()));
-    }
-
-    private NodeFailTester(ConfigserverConfig configserverConfig) {
         clock = new ManualClock();
         curator = new MockCurator();
         nodeRepository = new NodeRepository(nodeFlavors, curator, clock, zone, new MockNameResolver().mockAnyLookup(),
-                new DockerImage("docker-registry.domain.tld:8080/dist/vespa"));
+                                            new DockerImage("docker-registry.domain.tld:8080/dist/vespa"));
         provisioner = new NodeRepositoryProvisioner(nodeRepository, nodeFlavors, zone);
         hostLivenessTracker = new TestHostLivenessTracker(clock);
         orchestrator = new OrchestratorMock();
-        this.configserverConfig = configserverConfig;
     }
-
+    
     public static NodeFailTester withTwoApplications() {
-        return withTwoApplications(new ConfigserverConfig(new ConfigserverConfig.Builder()));
-    }
-
-    public static NodeFailTester withTwoApplications(ConfigserverConfig configserverConfig) {
-        NodeFailTester tester = new NodeFailTester(configserverConfig);
+        NodeFailTester tester = new NodeFailTester();
         
         tester.createReadyNodes(16);
         tester.createHostNodes(3);
@@ -195,7 +183,7 @@ public class NodeFailTester {
     }
 
     public NodeFailer createFailer() {
-        return new NodeFailer(deployer, hostLivenessTracker, serviceMonitor, nodeRepository, downtimeLimitOneHour, clock, orchestrator, NodeFailer.ThrottlePolicy.hosted, metric, new JobControl(nodeRepository.database()), configserverConfig);
+        return new NodeFailer(deployer, hostLivenessTracker, serviceMonitor, nodeRepository, downtimeLimitOneHour, clock, orchestrator, NodeFailer.ThrottlePolicy.hosted, metric, new JobControl(nodeRepository.database()));
     }
 
     public void allNodesMakeAConfigRequestExcept(Node ... deadNodeArray) {
@@ -231,8 +219,8 @@ public class NodeFailTester {
             nodes.add(nodeRepository.createNode("node" + i, "host" + i, parentHostname, flavor, nodeType));
 
         nodes = nodeRepository.addNodes(nodes);
-        nodes = nodeRepository.setDirty(nodes, Agent.system, getClass().getSimpleName());
-        return nodeRepository.setReady(nodes, Agent.system, getClass().getSimpleName());
+        nodes = nodeRepository.setDirty(nodes);
+        return nodeRepository.setReady(nodes);
     }
 
     private List<Node> createHostNodes(int count) {
@@ -240,8 +228,8 @@ public class NodeFailTester {
         for (int i = 0; i < count; i++)
             nodes.add(nodeRepository.createNode("parent" + i, "parent" + i, Optional.empty(), nodeFlavors.getFlavorOrThrow("default"), NodeType.host));
         nodes = nodeRepository.addNodes(nodes);
-        nodes = nodeRepository.setDirty(nodes, Agent.system, getClass().getSimpleName());
-        return nodeRepository.setReady(nodes, Agent.system, getClass().getSimpleName());
+        nodes = nodeRepository.setDirty(nodes);
+        return nodeRepository.setReady(nodes);
     }
 
     private void activate(ApplicationId applicationId, ClusterSpec cluster, int nodeCount) {

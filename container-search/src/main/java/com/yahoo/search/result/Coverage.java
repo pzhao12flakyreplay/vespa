@@ -12,19 +12,13 @@ import com.google.common.annotations.Beta;
 public class Coverage extends com.yahoo.container.handler.Coverage {
 
     public Coverage(long docs, long active) {
-        this(docs, active, 0);
+        super(docs, active, 0, 1);
     }
 
-    public Coverage(long docs, long active, int nodes) {
-        super(docs, active, nodes, 1);
-    }
-
-    @Deprecated
     public Coverage(long docs, int nodes, boolean full) {
         this(docs, nodes, full, 1);
     }
 
-    @Deprecated
     public Coverage(long docs, int nodes, boolean full, int resultSets) {
         super(docs, nodes, full, resultSets);
     }
@@ -43,7 +37,5 @@ public class Coverage extends com.yahoo.container.handler.Coverage {
      * @return self for chaining
      */
     public Coverage setDegradedReason(int degradedReason) { this.degradedReason = degradedReason; return this; }
-
-    public Coverage setNodesTried(int nodesTried) { super.setNodesTried(nodesTried); return this; }
 
 }

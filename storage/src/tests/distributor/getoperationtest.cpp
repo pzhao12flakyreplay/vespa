@@ -135,7 +135,7 @@ public:
     }
 
     void setClusterState(const std::string& clusterState) {
-        enableDistributorClusterState(clusterState);
+        _distributor->enableClusterState(lib::ClusterState(clusterState));
     }
 
     void testSimple();

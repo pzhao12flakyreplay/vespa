@@ -12,7 +12,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Replaces constant reference pseudofeatures in expressions by their constant value
+ * Replaces "features" which found in the given constants by their constant value
  *
  * @author bratseth
  */
@@ -45,8 +45,8 @@ public class ConstantDereferencer extends ExpressionTransformer<TransformContext
 
     private ExpressionNode transformConstantReference(ReferenceNode node, TransformContext context) {
         Value value = context.constants().get(node.getName());
-        if (value == null || value.type().rank() > 0) {
-            return node; // not a number constant reference
+        if (value == null || (value instanceof TensorValue)) {
+            return node; // not a value constant reference
         }
         return new ConstantNode(value.freeze());
     }

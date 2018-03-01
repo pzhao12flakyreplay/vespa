@@ -185,6 +185,17 @@ public class Messenger implements Runnable {
         }
     }
 
+    @Override
+    protected void finalize() throws Throwable {
+        try {
+            if (destroy()) {
+                log.log(LogLevel.WARNING, "Messenger destroyed by finalizer, please review application shutdown logic.");
+            }
+        } finally {
+            super.finalize();
+        }
+    }
+
     /**
      * <p>Defines the required interface for tasks to be posted to this
      * worker.</p>

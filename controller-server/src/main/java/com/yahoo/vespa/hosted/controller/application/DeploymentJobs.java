@@ -77,6 +77,7 @@ public class DeploymentJobs {
             if (job == null) job = JobStatus.initial(jobType);
             return job.withTriggering(version,
                                       applicationVersion,
+                                      change.platform().isPresent(),
                                       reason,
                                       triggerTime);
         });
@@ -263,7 +264,8 @@ public class DeploymentJobs {
             Objects.requireNonNull(jobError, "jobError cannot be null");
 
             if (jobType == JobType.component && !sourceRevision.isPresent()) {
-                throw new IllegalArgumentException("sourceRevision is required for job " + jobType);
+                // TODO: Throw after 2018-03-01
+                //throw new IllegalArgumentException("sourceRevision is required for job " + jobType);
             }
 
             this.applicationId = applicationId;

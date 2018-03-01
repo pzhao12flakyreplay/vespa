@@ -4,7 +4,6 @@ package com.yahoo.searchlib.rankingexpression.integration.tensorflow;
 import com.yahoo.searchlib.rankingexpression.evaluation.Context;
 import com.yahoo.searchlib.rankingexpression.evaluation.MapContext;
 import com.yahoo.searchlib.rankingexpression.evaluation.TensorValue;
-import com.yahoo.searchlib.rankingexpression.integration.tensorflow.importer.TensorConverter;
 import com.yahoo.tensor.Tensor;
 import com.yahoo.tensor.TensorType;
 import org.tensorflow.SavedModelBundle;
@@ -48,11 +47,8 @@ public class TestableTensorFlowModel {
 
     private Tensor tensorFlowExecute(SavedModelBundle model, String inputName, String operationName) {
         Session.Runner runner = model.session().runner();
-        FloatBuffer fb = FloatBuffer.allocate(d0Size * d1Size);
-        for (int i = 0; i < d1Size; ++i) {
-            fb.put(i, (float)(i * 1.0 / d1Size));
-        }
-        org.tensorflow.Tensor<?> placeholder = org.tensorflow.Tensor.create(new long[]{ d0Size, d1Size }, fb);
+        org.tensorflow.Tensor<?> placeholder = org.tensorflow.Tensor.create(new long[]{ d0Size, d1Size },
+                                                                            FloatBuffer.allocate(d0Size * d1Size));
         runner.feed(inputName, placeholder);
         List<org.tensorflow.Tensor<?>> results = runner.fetch(operationName).run();
         assertEquals(1, results.size());
@@ -61,8 +57,7 @@ public class TestableTensorFlowModel {
 
     private Context contextFrom(TensorFlowModel result) {
         MapContext context = new MapContext();
-        result.largeConstants().forEach((name, tensor) -> context.put("constant(\"" + name + "\")", new TensorValue(tensor)));
-        result.smallConstants().forEach((name, tensor) -> context.put("constant(\"" + name + "\")", new TensorValue(tensor)));
+        result.constants().forEach((name, tensor) -> context.put("constant(\"" + name + "\")", new TensorValue(tensor)));
         return context;
     }
 
@@ -70,7 +65,7 @@ public class TestableTensorFlowModel {
         Tensor.Builder b = Tensor.Builder.of(new TensorType.Builder().indexed("d0", d0Size).indexed("d1", d1Size).build());
         for (int d0 = 0; d0 < d0Size; d0++)
             for (int d1 = 0; d1 < d1Size; d1++)
-                b.cell(d1 * 1.0 / d1Size, d0, d1);
+                b.cell(0, d0, d1);
         return b.build();
     }
 

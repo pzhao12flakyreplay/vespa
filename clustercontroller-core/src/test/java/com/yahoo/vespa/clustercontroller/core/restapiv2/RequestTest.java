@@ -2,17 +2,15 @@
 package com.yahoo.vespa.clustercontroller.core.restapiv2;
 
 import com.yahoo.vespa.clustercontroller.utils.staterestapi.errors.InternalFailure;
-import org.junit.Test;
+import com.yahoo.vespa.clustercontroller.utils.staterestapi.errors.StateRestApiException;
+import junit.framework.TestCase;
 
-import static org.junit.Assert.assertTrue;
+public class RequestTest extends TestCase {
 
-public class RequestTest {
-
-    @Test
     public void testGetResultBeforeCompletion() {
         Request<String> r = new Request<String>(Request.MasterState.MUST_BE_MASTER) {
             @Override
-            public String calculateResult(Context context) {
+            public String calculateResult(Context context) throws StateRestApiException {
                 return "foo";
             }
         };
@@ -32,5 +30,4 @@ public class RequestTest {
             assertTrue(false);
         }
     }
-
 }

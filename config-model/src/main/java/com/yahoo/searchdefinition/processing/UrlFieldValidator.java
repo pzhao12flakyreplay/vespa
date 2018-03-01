@@ -18,9 +18,7 @@ public class UrlFieldValidator extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             if  ( ! field.getDataType().equals(DataType.URI)) continue;
 

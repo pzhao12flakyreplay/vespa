@@ -1,14 +1,7 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.standalone;
 
-import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.fail;
-
 public class ClusterControllerConfigFetcherTest extends ClusterControllerTest {
-
-    @Test
     public void testSimple() throws Exception {
         setFleetControllerConfigProperty();
         setSlobrokConfigProperty();
@@ -23,7 +16,6 @@ public class ClusterControllerConfigFetcherTest extends ClusterControllerTest {
         configFetcher.close();
     }
 
-    @Test
     public void testInitialConfigFailure() throws Exception {
         setFleetControllerConfigProperty();
         setSlobrokConfigProperty();
@@ -43,7 +35,6 @@ public class ClusterControllerConfigFetcherTest extends ClusterControllerTest {
         }
     }
 
-    @Test
     public void testConfigUpdate() throws Exception {
         setFleetControllerConfigProperty();
         setSlobrokConfigProperty();
@@ -58,5 +49,4 @@ public class ClusterControllerConfigFetcherTest extends ClusterControllerTest {
         };
         configFetcher.updated(1000);
     }
-
 }

@@ -31,15 +31,16 @@ public class MultifieldIndexHarmonizer extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         populateIndexToFields(search);
         resolveAllConflicts(search);
     }
 
     private void populateIndexToFields(Search search) {
         for (SDField field : search.allConcreteFields() ) {
-            if ( ! field.doesIndexing()) continue;
-
+            if (!field.doesIndexing()) {
+                continue;
+            }
             for (Iterator j = field.getFieldNameAsIterator(); j.hasNext();) {
                 String indexName = (String)j.next();
                 addIndexField(indexName, field);
@@ -48,10 +49,10 @@ public class MultifieldIndexHarmonizer extends Processor {
     }
 
     private void addIndexField(String indexName,SDField field) {
-        List<SDField> fields = indexToFields.get(indexName);
-        if (fields == null) {
-            fields = new java.util.ArrayList<>();
-            indexToFields.put(indexName, fields);
+        List<SDField> fields=indexToFields.get(indexName);
+        if (fields==null) {
+            fields=new java.util.ArrayList<>();
+            indexToFields.put(indexName,fields);
         }
         fields.add(field);
     }

@@ -16,15 +16,11 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
  *
  */
 public class SummaryFieldsMustHaveValidSource extends Processor {
-
     SummaryFieldsMustHaveValidSource(Search search, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
         super(search, deployLogger, rankProfileRegistry, queryProfiles);
     }
-
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (DocumentSummary summary : search.getSummaries().values()) {
             for (SummaryField summaryField : summary.getSummaryFields()) {
                 if (summaryField.getSources().isEmpty()) {
@@ -56,9 +52,8 @@ public class SummaryFieldsMustHaveValidSource extends Processor {
 
     private void verifySource(String source, SummaryField summaryField, DocumentSummary summary) {
         if ( ! isValid(source, summaryField, summary) ) {
-            throw new IllegalArgumentException("For search '" + search.getName() + "', summary class '" +
-                                               summary.getName() + "'," + " summary field '" + summaryField.getName() +
-                                               "': there is no valid source '" + source + "'.");
+            throw new IllegalArgumentException("For search '" + search.getName() + "', summary class '" + summary.getName() + "'," +
+                    " summary field '" + summaryField.getName() + "': there is no valid source '" + source + "'.");
         }
     }
 
@@ -69,7 +64,6 @@ public class SummaryFieldsMustHaveValidSource extends Processor {
     private static boolean isInThisSummaryClass(DocumentSummary summary, String name) {
         return summary.getSummaryField(name) != null;
     }
-
     private boolean isDocumentField(String name) {
         return search.getField(name) != null;
     }
@@ -77,5 +71,4 @@ public class SummaryFieldsMustHaveValidSource extends Processor {
     private boolean isSummaryField(String name) {
         return search.getSummaryField(name) != null;
     }
-
 }

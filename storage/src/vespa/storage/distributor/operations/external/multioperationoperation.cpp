@@ -40,7 +40,7 @@ MultiOperationOperation::sendToBucket(
     std::vector<MessageTracker::ToSend> createBucketBatch;
 
     if (PutOperation::checkCreateBucket(_bucketSpace.getDistribution(),
-                                        _bucketSpace.getClusterState(),
+                                        _manager.getClusterState(),
                                         e,
                                         targetNodes,
                                         createBucketBatch,
@@ -114,12 +114,12 @@ struct BucketOperationList {
 void
 MultiOperationOperation::onStart(DistributorMessageSender& sender)
 {
-    lib::ClusterState systemState = _bucketSpace.getClusterState();
+    lib::ClusterState systemState = _manager.getClusterState();
 
     // Don't do anything if all nodes are down.
     bool up = false;
     for (uint16_t i = 0; i < systemState.getNodeCount(lib::NodeType::STORAGE); i++) {
-        if (_manager.storageNodeIsUp(_msg->getBucket().getBucketSpace(), i)) {
+        if (_manager.storageNodeIsUp(i)) {
             up = true;
             break;
         }

@@ -38,6 +38,7 @@ public:
     void registerServiceLayerComponent(ServiceLayerManagedComponent&) override;
     void setDiskCount(uint16_t count);
     void setDistribution(lib::Distribution::SP distribution) override;
+    void setEnableMultipleBucketSpaces(bool enabled) override;
 };
 
 } // storage

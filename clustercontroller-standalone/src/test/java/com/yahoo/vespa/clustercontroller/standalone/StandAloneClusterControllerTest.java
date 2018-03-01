@@ -1,12 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.standalone;
 
-import org.junit.Test;
-
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
-import static org.junit.Assert.fail;
-
 public class StandAloneClusterControllerTest extends ClusterControllerTest {
 
     abstract class Runner implements Runnable {
@@ -25,7 +19,6 @@ public class StandAloneClusterControllerTest extends ClusterControllerTest {
         public abstract void attemptRun() throws Exception;
     }
 
-    @Test
     public void testSimpleStartStop() throws Exception {
         setupConfig();
         ClusterControllerConfigFetcher configFetcher = new ClusterControllerConfigFetcher();
@@ -35,13 +28,12 @@ public class StandAloneClusterControllerTest extends ClusterControllerTest {
         controller.stop();
     }
 
-    @Test
     public void testShortRun() throws Exception {
         setupConfig();
         ClusterControllerConfigFetcher configFetcher = new ClusterControllerConfigFetcher() {
             int counter = 0;
             @Override
-            public boolean updated(long timeoutMillis) {
+            public boolean updated(long timeoutMillis) throws Exception {
                 return (++counter % 2 == 0);
             }
             @Override
@@ -74,33 +66,30 @@ public class StandAloneClusterControllerTest extends ClusterControllerTest {
         assertNull(r.exception);
     }
 
-    @Test
     public void testFailStart() throws Exception {
         setupConfig();
         ClusterControllerConfigFetcher configFetcher = new ClusterControllerConfigFetcher();
         StandAloneClusterController controller = new StandAloneClusterController(configFetcher) {
             @Override
-            public void start() {
+            public void start() throws Exception {
                 throw new RuntimeException("Foo");
             }
         };
         StandAloneClusterController.runApplication(controller);
     }
 
-    @Test
     public void testFailRun() throws Exception {
         setupConfig();
         ClusterControllerConfigFetcher configFetcher = new ClusterControllerConfigFetcher();
         StandAloneClusterController controller = new StandAloneClusterController(configFetcher) {
             @Override
-            public void run() {
+            public void run() throws Exception {
                 throw new RuntimeException("Foo");
             }
         };
         StandAloneClusterController.runApplication(controller);
     }
 
-    @Test
     public void testCallMainToGetCoverage() throws Exception {
         tearDown();
         setProperty("config.id", "file:non-existing");

@@ -14,7 +14,6 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
 
 public class DocumentModelBuilderTestCase extends SearchDefinitionTestCase {
-
     @Test
     public void testDocumentManagerSimple()  throws IOException, ParseException {
         DocumentModel model = createAndTestModel("src/test/configmodel/types/types.sd");
@@ -64,5 +63,4 @@ public class DocumentModelBuilderTestCase extends SearchDefinitionTestCase {
         assertNotNull(model.getDocumentManager().getDocumentType("types"));
         return model;
     }
-
 }

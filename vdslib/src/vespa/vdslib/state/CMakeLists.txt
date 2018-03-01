@@ -7,6 +7,5 @@ vespa_add_library(vdslib_state OBJECT
     diskstate.cpp
     nodestate.cpp
     clusterstate.cpp
-    cluster_state_bundle.cpp
     DEPENDS
 )

@@ -61,6 +61,15 @@ public class NodeRepositoryTest {
     }
 
     @Test
+    public void featureToggleDynamicAllocationTest() {
+        NodeRepositoryTester tester = new NodeRepositoryTester();
+        assertFalse(tester.nodeRepository().dynamicAllocationEnabled());
+
+        tester.curator().set(Path.fromString("/provision/v1/dynamicDockerAllocation"), new byte[0]);
+        assertTrue(tester.nodeRepository().dynamicAllocationEnabled());
+    }
+
+    @Test
     public void only_allow_docker_containers_remove_in_ready() {
         NodeRepositoryTester tester = new NodeRepositoryTester();
         tester.addNode("id1", "host1", "docker", NodeType.tenant);
@@ -72,8 +81,8 @@ public class NodeRepositoryTest {
             // Expected
         }
 
-        tester.nodeRepository().setDirty("host1", Agent.system, getClass().getSimpleName());
-        tester.nodeRepository().setReady("host1", Agent.system, getClass().getSimpleName());
+        tester.nodeRepository().setDirty("host1");
+        tester.nodeRepository().setReady("host1");
         tester.nodeRepository().removeRecursively("host1");
     }
 
@@ -89,7 +98,7 @@ public class NodeRepositoryTest {
         tester.addNode("node20", "node20", "host2", "docker", NodeType.tenant);
         assertEquals(6, tester.nodeRepository().getNodes().size());
 
-        tester.nodeRepository().setDirty("node11", Agent.system, getClass().getSimpleName());
+        tester.nodeRepository().setDirty("node11");
 
         try {
             tester.nodeRepository().removeRecursively("host1");
@@ -104,7 +113,7 @@ public class NodeRepositoryTest {
         assertEquals(4, tester.nodeRepository().getNodes().size());
 
         // Now node10 and node12 are in provisioned, set node11 to ready, and it should be OK to delete host1
-        tester.nodeRepository().setReady("node11", Agent.system, getClass().getSimpleName());
+        tester.nodeRepository().setReady("node11");
         tester.nodeRepository().removeRecursively("node11"); // Remove one of the children first instead
         assertEquals(3, tester.nodeRepository().getNodes().size());
 

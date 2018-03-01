@@ -124,7 +124,7 @@ public class VersionStatus {
 
         ListMap<Version, String> versions = new ListMap<>();
         for (URI configServer : configServers)
-            versions.put(controller.applications().configServer().version(configServer), configServer.getHost());
+            versions.put(controller.applications().configserverClient().version(configServer), configServer.getHost());
         return versions;
     }
 
@@ -177,19 +177,18 @@ public class VersionStatus {
                                               Collection<String> configServerHostnames,
                                               Controller controller) {
         GitSha gitSha = controller.gitHub().getCommit(VESPA_REPO_OWNER, VESPA_REPO, statistics.version().toFullString());
-        Instant committedAt = Instant.ofEpochMilli(gitSha.commit.author.date.getTime());
-        VespaVersion.Confidence confidence = controller.curator().readConfidenceOverrides().get(statistics.version());
-        // Compute confidence if there's no override
-        if (confidence == null) {
-            if (isSystemVersion) { // Always compute confidence for system version
-                confidence = VespaVersion.confidenceFrom(statistics, controller);
-            } else { // Keep existing confidence for non-system versions if already computed
-                confidence = confidenceFor(statistics.version(), controller)
-                        .orElse(VespaVersion.confidenceFrom(statistics, controller));
-            }
+        Instant releasedAt = Instant.ofEpochMilli(gitSha.commit.author.date.getTime()); // commitedAt ...
+        VespaVersion.Confidence confidence;
+        // Always compute confidence for system version
+        if (isSystemVersion) {
+            confidence = VespaVersion.confidenceFrom(statistics, controller);
+        } else {
+            // Keep existing confidence for non-system versions if already computed
+            confidence = confidenceFor(statistics.version(), controller)
+                    .orElse(VespaVersion.confidenceFrom(statistics, controller));
         }
         return new VespaVersion(statistics,
-                                gitSha.sha, committedAt,
+                                gitSha.sha, releasedAt,
                                 isSystemVersion,
                                 configServerHostnames,
                                 confidence

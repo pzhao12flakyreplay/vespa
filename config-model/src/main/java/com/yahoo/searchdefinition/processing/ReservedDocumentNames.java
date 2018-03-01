@@ -11,12 +11,11 @@ import java.util.HashSet;
 import java.util.Set;
 
 /**
- * @author Simon Thoresen
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen</a>
  */
 public class ReservedDocumentNames extends Processor {
 
     private static final Set<String> RESERVED_NAMES = new HashSet<>();
-
     static {
         for (SDDocumentType dataType : SDDocumentType.VESPA_DOCUMENT.getTypes()) {
             RESERVED_NAMES.add(dataType.getName());
@@ -28,9 +27,7 @@ public class ReservedDocumentNames extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         String docName = search.getDocument().getName();
         if (RESERVED_NAMES.contains(docName)) {
             throw new IllegalArgumentException("For search '" + search.getName() + "': Document name '" + docName +

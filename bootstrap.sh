@@ -26,7 +26,7 @@ else
 fi
 
 mvn_install() {
-    mvn --quiet --batch-mode --threads 1.5C --no-snapshot-updates install -Dmaven.test.skip=true -Dmaven.javadoc.skip=true "$@"
+    mvn -e -X --quiet --batch-mode --threads 1.5C --no-snapshot-updates install -Dmaven.test.skip=true -Dmaven.javadoc.skip=true "$@"
 }
 
 # Generate vtag map
@@ -67,9 +67,10 @@ case "$MODE" in
         ;;
     full)
 	echo "Building full set of dependencies."
-        mvn_install -am -pl jrt,linguistics,messagebus
+        mvn_install -am -pl filedistributionmanager,jrt,linguistics,messagebus
         ;;
     default)
 	echo "Building default set of dependencies."
+        mvn_install -am -pl filedistributionmanager
         ;;
 esac

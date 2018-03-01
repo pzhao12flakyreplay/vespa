@@ -11,13 +11,14 @@ import com.yahoo.vespa.hosted.provision.NodeRepository;
 
 import java.time.Clock;
 import java.util.List;
+import java.util.function.BiConsumer;
 
 /**
  * Performs preparation of node activation changes for a single host group in an application.
  *
  * @author bratseth
  */
-public class GroupPreparer {
+class GroupPreparer {
 
     private final NodeRepository nodeRepository;
     private final Clock clock;
@@ -37,14 +38,15 @@ public class GroupPreparer {
      *                           This method will remove from this list if it finds it needs additional nodes
      * @param highestIndex       the current highest node index among all active nodes in this cluster.
      *                           This method will increase this number when it allocates new nodes to the cluster.
-     * @param spareCount         The number of spare docker hosts we want when dynamically allocate docker containers
+     * @param nofSpares          The number of spare docker hosts we want when dynamically allocate docker containers
+     * @param debugRecorder      Debug facility to step through the allocation process after the fact
      * @return the list of nodes this cluster group will have allocated if activated
      */
     // Note: This operation may make persisted changes to the set of reserved and inactive nodes,
     // but it may not change the set of active nodes, as the active nodes must stay in sync with the
     // active config model which is changed on activate
     public List<Node> prepare(ApplicationId application, ClusterSpec cluster, NodeSpec requestedNodes,
-                              List<Node> surplusActiveNodes, MutableInteger highestIndex, int spareCount) {
+                              List<Node> surplusActiveNodes, MutableInteger highestIndex, int nofSpares, BiConsumer<List<Node>, String> debugRecorder) {
         try (Mutex lock = nodeRepository.lock(application)) {
 
             // Lock ready pool to ensure that ready nodes are not simultaneously grabbed by others
@@ -56,13 +58,14 @@ public class GroupPreparer {
                                                                   cluster,
                                                                   requestedNodes,
                                                                   nodeRepository.getAvailableFlavors(),
-                                                                  spareCount,
+                                                                  nofSpares,
                                                                   nodeRepository.nameResolver());
 
                 prioritizer.addApplicationNodes();
                 prioritizer.addSurplusNodes(surplusActiveNodes);
                 prioritizer.addReadyNodes();
-                prioritizer.addNewDockerNodes();
+                if (nodeRepository.dynamicAllocationEnabled())
+                    prioritizer.addNewDockerNodes();
 
                 // Allocate from the prioritized list
                 NodeAllocation allocation = new NodeAllocation(application, cluster, requestedNodes, highestIndex, clock);
@@ -71,13 +74,10 @@ public class GroupPreparer {
                     throw new OutOfCapacityException("Could not satisfy " + requestedNodes + " for " + cluster +
                                                      outOfCapacityDetails(allocation));
 
-                // Extend reservation for already reserved nodes
-                nodeRepository.reserve(nodeRepository.getNodes(application, Node.State.reserved));
-
                 // Carry out and return allocation
-                nodeRepository.reserve(allocation.reservableNodes());
-                nodeRepository.addDockerNodes(allocation.newNodes());
-                surplusActiveNodes.removeAll(allocation.surplusNodes());
+                nodeRepository.reserve(allocation.acceptedInactiveAndReadyNodes());
+                nodeRepository.addDockerNodes(allocation.acceptedNewNodes());
+                surplusActiveNodes.removeAll(allocation.acceptedSurplusNodes());
                 return allocation.finalNodes(surplusActiveNodes);
             }
         }

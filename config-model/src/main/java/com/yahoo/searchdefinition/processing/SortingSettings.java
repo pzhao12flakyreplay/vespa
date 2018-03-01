@@ -11,8 +11,8 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
 
 /**
  * Validate conflicting settings for sorting
+ * @author vegardh
  *
- * @author Vegard Havdal
  */
 public class SortingSettings extends Processor {
 
@@ -21,17 +21,15 @@ public class SortingSettings extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             for (Attribute attribute : field.getAttributes().values()) {
                 Sorting sorting = attribute.getSorting();
-                if (sorting.getFunction() != Sorting.Function.UCA) {
-                    if (sorting.getStrength()!=null && sorting.getStrength() != Sorting.Strength.PRIMARY) {
+                if (sorting.getFunction()!=Sorting.Function.UCA) {
+                    if (sorting.getStrength()!=null && sorting.getStrength()!=Sorting.Strength.PRIMARY) {
                         warn(search, field, "Sort strength only works for sort function 'uca'.");
                     }
-                    if (sorting.getLocale() != null && ! "".equals(sorting.getLocale())) {
+                    if (sorting.getLocale()!=null && !"".equals(sorting.getLocale())) {
                         warn(search, field, "Sort locale only works for sort function 'uca'.");
                     }
                 }

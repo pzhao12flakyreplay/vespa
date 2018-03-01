@@ -1,7 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core;
 
-import com.yahoo.document.FixedBucketSpaces;
 import com.yahoo.jrt.ListenFailedException;
 import com.yahoo.log.LogLevel;
 import com.yahoo.vdslib.distribution.ConfiguredNode;
@@ -25,11 +24,18 @@ import org.apache.commons.lang.exception.ExceptionUtils;
 
 import java.io.FileNotFoundException;
 
-import java.util.*;
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
+import java.util.TimeZone;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.logging.Logger;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 
 public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAddedOrRemovedListener, SystemStateListener,
                                         Runnable, RemoteClusterControllerTaskScheduler {
@@ -63,7 +69,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
 
     private boolean waitingForCycle = false;
     private StatusPageServer.PatternRequestRouter statusRequestRouter = new StatusPageServer.PatternRequestRouter();
-    private final List<ClusterStateBundle> newStates = new ArrayList<>();
+    private final List<com.yahoo.vdslib.state.ClusterState> newStates = new ArrayList<>();
     private long configGeneration = -1;
     private long nextConfigGeneration = -1;
     private Queue<RemoteClusterControllerTask> remoteTasks = new LinkedList<>();
@@ -77,11 +83,6 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
     private List<RemoteClusterControllerTask> tasksPendingStateRecompute = new ArrayList<>();
     // Invariant: queued task versions are monotonically increasing with queue position
     private Queue<VersionDependentTaskCompletion> taskCompletionQueue = new ArrayDeque<>();
-
-    // Legacy behavior is an empty set of explicitly configured bucket spaces, which means that
-    // only a baseline cluster state will be sent from the controller and no per-space state
-    // deriving is done.
-    private Set<String> configuredBucketSpaces = Collections.emptySet();
 
     private final RunDataExtractor dataExtractor = new RunDataExtractor() {
         @Override
@@ -121,7 +122,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
         this.stateGatherer = nodeStateGatherer;
         this.stateChangeHandler = stateChangeHandler;
         this.systemStateBroadcaster = systemStateBroadcaster;
-        this.stateVersionTracker = new StateVersionTracker();
+        this.stateVersionTracker = new StateVersionTracker(metricUpdater);
         this.metricUpdater = metricUpdater;
 
         this.statusPageServer = statusPage;
@@ -178,7 +179,6 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
                 options.minRatioOfStorageNodesUp);
         NodeStateGatherer stateGatherer = new NodeStateGatherer(timer, timer, log);
         Communicator communicator = new RPCCommunicator(
-                RPCCommunicator.createRealSupervisor(),
                 timer,
                 options.fleetControllerIndex,
                 options.nodeStateRequestTimeoutMS,
@@ -233,7 +233,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
             // Always give cluster state listeners the current state, in case acceptable state has come before listener is registered.
             com.yahoo.vdslib.state.ClusterState state = getSystemState();
             if (state == null) throw new NullPointerException("Cluster state should never be null at this point");
-            listener.handleNewSystemState(ClusterStateBundle.ofBaselineOnly(AnnotatedClusterState.withoutAnnotations(state)));
+            listener.handleNewSystemState(state);
         }
     }
 
@@ -326,7 +326,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
     @Override
     public void handleUpdatedHostInfo(NodeInfo nodeInfo, HostInfo newHostInfo) {
         verifyInControllerThread();
-        stateVersionTracker.handleUpdatedHostInfo(nodeInfo, newHostInfo);
+        stateVersionTracker.handleUpdatedHostInfo(stateChangeHandler.getHostnames(), nodeInfo, newHostInfo);
     }
 
     @Override
@@ -350,18 +350,16 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
         stateChangeHandler.handleReturnedRpcAddress(node);
     }
 
-    @Override
-    public void handleNewSystemState(ClusterStateBundle stateBundle) {
+    public void handleNewSystemState(com.yahoo.vdslib.state.ClusterState state) {
         verifyInControllerThread();
-        ClusterState baselineState = stateBundle.getBaselineClusterState();
-        newStates.add(stateBundle);
-        metricUpdater.updateClusterStateMetrics(cluster, baselineState);
-        systemStateBroadcaster.handleNewClusterStates(stateBundle);
+        newStates.add(state);
+        metricUpdater.updateClusterStateMetrics(cluster, state);
+        systemStateBroadcaster.handleNewSystemState(state);
         // Iff master, always store new version in ZooKeeper _before_ publishing to any
         // nodes so that a cluster controller crash after publishing but before a successful
         // ZK store will not risk reusing the same version number.
         if (masterElectionHandler.isMaster()) {
-            storeClusterStateVersionToZooKeeper(baselineState);
+            storeClusterStateVersionToZooKeeper(state);
         }
     }
 
@@ -427,9 +425,8 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
 
         // Check retirement changes
         for (ConfiguredNode node : newNodes) {
-            if (node.retired() != cluster.getConfiguredNodes().get(node.index()).retired()) {
+            if (node.retired() != cluster.getConfiguredNodes().get(node.index()).retired())
                 return true;
-            }
         }
 
         return false;
@@ -444,20 +441,10 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
             cluster.setSlobrokGenerationCount(0);
         }
 
-        // TODO don't hardcode bucket spaces
-        if (options.enableMultipleBucketSpaces) {
-            configuredBucketSpaces = Collections.unmodifiableSet(
-                    Stream.of(FixedBucketSpaces.defaultSpace(), FixedBucketSpaces.globalSpace())
-                            .collect(Collectors.toSet()));
-        } else {
-            configuredBucketSpaces = Collections.emptySet();
-        }
-
         communicator.propagateOptions(options);
 
-        if (nodeLookup instanceof SlobrokClient) {
-            ((SlobrokClient) nodeLookup).setSlobrokConnectionSpecs(options.slobrokConnectionSpecs);
-        }
+        if (nodeLookup instanceof SlobrokClient)
+            ((SlobrokClient)nodeLookup).setSlobrokConnectionSpecs(options.slobrokConnectionSpecs);
         eventLog.setMaxSize(options.eventLogMaxSize, options.eventNodeLogMaxSize);
         cluster.setPollingFrequency(options.statePollingFrequency);
         cluster.setDistribution(options.storageDistribution);
@@ -638,7 +625,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
         return false;
     }
 
-    private boolean broadcastClusterStateToEligibleNodes() {
+    private boolean broadcastClusterStateToEligibleNodes() throws InterruptedException {
         boolean sentAny = false;
         // Give nodes a fair chance to respond first time to state gathering requests, so we don't
         // disturb system when we take over. Allow anyways if we have states from all nodes.
@@ -651,7 +638,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
                 // Reset timer to only see warning once.
                 firstAllowedStateBroadcast = currentTime;
             }
-            sentAny = systemStateBroadcaster.broadcastNewState(databaseContext, communicator);
+            sentAny = systemStateBroadcaster.broadcastNewState(database, databaseContext, communicator, this);
             if (sentAny) {
                 nextStateSendTime = currentTime + options.minTimeBetweenNewSystemStates;
             }
@@ -662,9 +649,9 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
     private void propagateNewStatesToListeners() {
         if ( ! newStates.isEmpty()) {
             synchronized (systemStateListeners) {
-                for (ClusterStateBundle stateBundle : newStates) {
+                for (ClusterState state : newStates) {
                     for(SystemStateListener listener : systemStateListeners) {
-                        listener.handleNewSystemState(stateBundle);
+                        listener.handleNewSystemState(state);
                     }
                 }
                 newStates.clear();
@@ -791,13 +778,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
         if (mustRecomputeCandidateClusterState()) {
             stateChangeHandler.unsetStateChangedFlag();
             final AnnotatedClusterState candidate = computeCurrentAnnotatedState();
-            // TODO test multiple bucket spaces configured
-            // TODO what interaction do we want between generated and derived states wrt. auto group take-downs?
-            final ClusterStateBundle candidateBundle = ClusterStateBundle.builder(candidate)
-                    .bucketSpaces(configuredBucketSpaces)
-                    .stateDeriver(createBucketSpaceStateDeriver())
-                    .deriveAndBuild();
-            stateVersionTracker.updateLatestCandidateStateBundle(candidateBundle);
+            stateVersionTracker.updateLatestCandidateState(candidate);
 
             if (stateVersionTracker.candidateChangedEnoughFromCurrentToWarrantPublish()
                     || stateVersionTracker.hasReceivedNewVersionFromZooKeeper())
@@ -806,9 +787,8 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
                 final AnnotatedClusterState before = stateVersionTracker.getAnnotatedVersionedClusterState();
 
                 stateVersionTracker.promoteCandidateToVersionedState(timeNowMs);
-                // TODO also emit derived state edges events
                 emitEventsForAlteredStateEdges(before, stateVersionTracker.getAnnotatedVersionedClusterState(), timeNowMs);
-                handleNewSystemState(stateVersionTracker.getVersionedClusterStateBundle());
+                handleNewSystemState(stateVersionTracker.getVersionedClusterState());
                 stateWasChanged = true;
             }
         }
@@ -822,10 +802,6 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
          */
         scheduleVersionDependentTasksForFutureCompletion(stateVersionTracker.getCurrentVersion());
         return stateWasChanged;
-    }
-
-    private ClusterStateDeriver createBucketSpaceStateDeriver() {
-        return new MaintenanceWhenPendingGlobalMerges(stateVersionTracker.createMergePendingChecker());
     }
 
     /**
@@ -886,9 +862,7 @@ public class FleetController implements NodeStateOrHostInfoChangeHandler, NodeAd
     }
 
     private boolean mustRecomputeCandidateClusterState() {
-        return stateChangeHandler.stateMayHaveChanged()
-                || stateVersionTracker.hasReceivedNewVersionFromZooKeeper()
-                || stateVersionTracker.bucketSpaceMergeCompletionStateHasChanged();
+        return stateChangeHandler.stateMayHaveChanged() || stateVersionTracker.hasReceivedNewVersionFromZooKeeper();
     }
 
     private boolean handleLeadershipEdgeTransitions() throws InterruptedException {

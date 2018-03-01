@@ -23,6 +23,7 @@ import com.yahoo.jrt.Target;
 import com.yahoo.jrt.Transport;
 import com.yahoo.log.LogLevel;
 import com.yahoo.vespa.config.ErrorCode;
+import com.yahoo.vespa.config.JRTConnectionPool;
 import com.yahoo.vespa.config.JRTMethods;
 import com.yahoo.vespa.config.protocol.ConfigResponse;
 import com.yahoo.vespa.config.protocol.JRTServerConfigRequest;
@@ -98,6 +99,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
     private final FileServer fileServer;
     
     private final ThreadPoolExecutor executorService;
+    private final boolean useChunkedFileTransfer;
     private final FileDownloader downloader;
     private volatile boolean allTenantsLoaded = false;
 
@@ -116,8 +118,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
         this.metrics = metrics.getOrCreateMetricUpdater(Collections.<String, String>emptyMap());
         this.hostLivenessTracker = hostLivenessTracker;
         BlockingQueue<Runnable> workQueue = new LinkedBlockingQueue<>(config.maxgetconfigclients());
-        int numberOfRpcThreads = (config.numRpcThreads() == 0) ? Runtime.getRuntime().availableProcessors() : config.numRpcThreads();
-        executorService = new ThreadPoolExecutor(numberOfRpcThreads, numberOfRpcThreads,
+        executorService = new ThreadPoolExecutor(config.numthreads(), config.numthreads(),
                 0, TimeUnit.SECONDS, workQueue, ThreadFactoryFactory.getThreadFactory(THREADPOOL_NAME));
         delayedConfigResponses = new DelayedConfigResponses(this, config.numDelayedResponseThreads());
         spec = new Spec(null, config.rpcport());
@@ -125,6 +126,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
         this.useRequestVersion = config.useVespaVersionInRequest();
         this.hostedVespa = config.hostedVespa();
         this.fileServer = fileServer;
+        this.useChunkedFileTransfer = config.usechunkedtransfer();
         downloader = fileServer.downloader();
         setUpHandlers();
     }
@@ -426,6 +428,35 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
         return useRequestVersion;
     }
 
+    class WholeFileReceiver implements FileServer.Receiver {
+        Target target;
+        WholeFileReceiver(Target target) {
+            this.target = target;
+        }
+
+        @Override
+        public String toString() {
+            return target.toString();
+        }
+
+        @Override
+        public void receive(FileReferenceData fileData, FileServer.ReplayStatus status) {
+            Request fileBlob = new Request(FileReceiver.RECEIVE_METHOD);
+            fileBlob.parameters().add(new StringValue(fileData.fileReference().value()));
+            fileBlob.parameters().add(new StringValue(fileData.filename()));
+            fileBlob.parameters().add(new StringValue(fileData.type().name()));
+            fileBlob.parameters().add(new DataValue(fileData.content().array()));
+            fileBlob.parameters().add(new Int64Value(fileData.xxhash()));
+            fileBlob.parameters().add(new Int32Value(status.getCode()));
+            fileBlob.parameters().add(new StringValue(status.getDescription()));
+            target.invokeSync(fileBlob, 600);
+            if (fileBlob.isError()) {
+                log.warning("Failed delivering reference '" + fileData.fileReference().value() + "' with file '" + fileData.filename() + "' to " +
+                            target.toString() + " with error: '" + fileBlob.errorMessage() + "'.");
+            }
+        }
+    }
+
     class ChunkedFileReceiver implements FileServer.Receiver {
         Target target;
         ChunkedFileReceiver(Target target) {
@@ -462,7 +493,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
             request.parameters().add(new StringValue(fileData.filename()));
             request.parameters().add(new StringValue(fileData.type().name()));
             request.parameters().add(new Int64Value(fileData.size()));
-            invokeRpcIfValidConnection(request);
+            target.invokeSync(request, 600);
             if (request.isError()) {
                 log.warning("Failed delivering meta for reference '" + fileData.fileReference().value() + "' with file '" + fileData.filename() + "' to " +
                         target.toString() + " with error: '" + request.errorMessage() + "'.");
@@ -480,7 +511,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
             request.parameters().add(new Int32Value(session));
             request.parameters().add(new Int32Value(partId));
             request.parameters().add(new DataValue(buf));
-            invokeRpcIfValidConnection(request);
+            target.invokeSync(request, 600);
             if (request.isError()) {
                 throw new IllegalArgumentException("Failed delivering reference '" + ref.value() + "' to " +
                                                            target.toString() + " with error: '" + request.errorMessage() + "'.");
@@ -497,7 +528,7 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
             request.parameters().add(new Int64Value(fileData.xxhash()));
             request.parameters().add(new Int32Value(status.getCode()));
             request.parameters().add(new StringValue(status.getDescription()));
-            invokeRpcIfValidConnection(request);
+            target.invokeSync(request, 600);
             if (request.isError()) {
                 throw new IllegalArgumentException("Failed delivering reference '" + fileData.fileReference().value() + "' with file '" + fileData.filename() + "' to " +
                                                            target.toString() + " with error: '" + request.errorMessage() + "'.");
@@ -507,20 +538,14 @@ public class RpcServer implements Runnable, ReloadListener, TenantListener {
                 }
             }
         }
-
-        private void invokeRpcIfValidConnection(Request request) {
-            if (target.isValid()) {
-                target.invokeSync(request, 600);
-            } else {
-                throw new RuntimeException("Connection to " + target + " is invalid", target.getConnectionLostReason());
-            }
-        }
     }
 
     @SuppressWarnings("UnusedDeclaration")
     public final void serveFile(Request request) {
         request.detach();
-        FileServer.Receiver receiver = new ChunkedFileReceiver(request.target());
+        FileServer.Receiver receiver = useChunkedFileTransfer
+                                       ? new ChunkedFileReceiver(request.target())
+                                       : new WholeFileReceiver(request.target());
         fileServer.serveFile(request, receiver);
     }
 

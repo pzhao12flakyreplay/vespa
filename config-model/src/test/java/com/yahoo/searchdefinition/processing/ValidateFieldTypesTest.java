@@ -40,7 +40,7 @@ public class ValidateFieldTypesTest {
         exceptionRule.expectMessage(
                 "For search '" + DOCUMENT_NAME + "', field '" + IMPORTED_FIELD_NAME + "': Incompatible types. " +
                 "Expected int for summary field '" + IMPORTED_FIELD_NAME + "', got string.");
-        validator.process(true);
+        validator.process();
     }
 
     private static Search createSearchWithDocument(String documentName) {
@@ -63,5 +63,4 @@ public class ValidateFieldTypesTest {
         summary.add(new SummaryField(fieldName, dataType));
         return summary;
     }
-
 }

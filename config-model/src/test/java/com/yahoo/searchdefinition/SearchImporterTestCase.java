@@ -41,7 +41,7 @@ public class SearchImporterTestCase extends SearchDefinitionTestCase {
         SDField field;
         Attribute attribute;
 
-        new MakeAliases(search, new BaseDeployLogger(), rankProfileRegistry, new QueryProfiles()).process(true);
+        new MakeAliases(search, new BaseDeployLogger(), rankProfileRegistry, new QueryProfiles()).process();
 
         // First field
         field=(SDField) document.getField("title");

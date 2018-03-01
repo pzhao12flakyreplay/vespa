@@ -12,6 +12,7 @@ import com.yahoo.config.model.test.MockApplicationPackage;
 import com.yahoo.config.model.test.MockRoot;
 import com.yahoo.text.XML;
 import com.yahoo.vespa.model.admin.Admin;
+import com.yahoo.vespa.model.admin.FileDistributionOptions;
 import com.yahoo.vespa.model.admin.monitoring.DefaultMonitoring;
 import com.yahoo.vespa.model.admin.monitoring.builder.Metrics;
 import com.yahoo.vespa.model.content.cluster.ContentCluster;
@@ -41,8 +42,8 @@ public class ContentClusterUtils {
         ApplicationPackage applicationPackage = new MockApplicationPackage.Builder().withSearchDefinitions(searchDefinitions).build();
         deployStateBuilder.applicationPackage(applicationPackage)
                           .modelHostProvisioner(provisioner)
-                          .build(true);
-        return new MockRoot("", deployStateBuilder.build(true));
+                          .build();
+        return new MockRoot("", deployStateBuilder.build());
     }
 
     public static MockRoot createMockRoot(String[] hosts, List<String> searchDefinitions) {
@@ -60,7 +61,7 @@ public class ContentClusterUtils {
     public static ContentCluster createCluster(String clusterXml, MockRoot root) {
         Document doc = XML.getDocument(clusterXml);
         Admin admin = new Admin(root, new DefaultMonitoring("vespa", 60), new Metrics(), Collections.emptyMap(), false,
-                                new FileDistributionConfigProducer.Builder()
+                                new FileDistributionConfigProducer.Builder(FileDistributionOptions.defaultOptions())
                                         .build(root, new MockFileRegistry(), null));
         ConfigModelContext context = ConfigModelContext.create(null, root.getDeployState(), null, root, null);
         

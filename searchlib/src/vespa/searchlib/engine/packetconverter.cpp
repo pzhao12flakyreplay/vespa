@@ -55,7 +55,7 @@ PacketConverter::toSearchRequest(const QUERYX &packet, SearchRequest &request)
     request.offset     = packet._offset;
     request.maxhits    = packet._maxhits;
     request.setTimeout(packet.getTimeout());
-    request.queryFlags = packet.getQueryFlags();
+    request.queryFlags = packet._qflags;
     request.ranking    = packet._ranking;
 
     for (uint32_t i = 0; i < packet._propsVector.size(); ++i) {
@@ -117,14 +117,13 @@ PacketConverter::fromSearchReply(const SearchReply &reply, QUERYRESULTX &packet)
         packet.AllocateGroupData(reply.groupResult.size());
         memcpy(packet._groupData, &(reply.groupResult[0]), reply.groupResult.size());
     }
+    packet._features |= QRF_COVERAGE;
     packet._coverageDocs = reply.coverage.getCovered();
     packet._activeDocs = reply.coverage.getActive();
     packet._soonActiveDocs = reply.coverage.getSoonActive();
     packet._coverageDegradeReason = reply.coverage.getDegradeReason();
-    packet.setNodesQueried(reply.coverage.getNodesQueried());
-    packet.setNodesReplied(reply.coverage.getNodesReplied());
-    if (reply.request && (reply.request->queryFlags & QFLAG_COVERAGE_NODES)) {
-        packet._features |= QRF_COVERAGE_NODES;
+    if (reply.request && (reply.request->queryFlags & QFLAG_EXTENDED_COVERAGE)) {
+        packet._features |= QRF_EXTENDED_COVERAGE;
     }
     if (reply.useWideHits) {
         packet._features |= QRF_MLD;

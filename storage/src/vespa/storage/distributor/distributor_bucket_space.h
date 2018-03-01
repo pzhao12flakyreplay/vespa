@@ -2,12 +2,12 @@
 #pragma once
 
 #include <vespa/storage/bucketdb/mapbucketdatabase.h>
+#include <vespa/vdslib/distribution/distribution.h>
 #include <memory>
 
 namespace storage {
 
 namespace lib {
-class ClusterState;
 class Distribution;
 }
 
@@ -26,7 +26,6 @@ namespace distributor {
  */
 class DistributorBucketSpace {
     MapBucketDatabase _bucketDatabase;
-    std::shared_ptr<const lib::ClusterState> _clusterState;
     std::shared_ptr<const lib::Distribution> _distribution;
 public:
     DistributorBucketSpace();
@@ -44,11 +43,9 @@ public:
         return _bucketDatabase;
     }
 
-    void setClusterState(std::shared_ptr<const lib::ClusterState> clusterState);
-
-    const lib::ClusterState &getClusterState() const noexcept { return *_clusterState; }
-
-    void setDistribution(std::shared_ptr<const lib::Distribution> distribution);
+    void setDistribution(std::shared_ptr<const lib::Distribution> distribution) {
+        _distribution = std::move(distribution);
+    }
 
     // Precondition: setDistribution has been called at least once prior.
     const lib::Distribution& getDistribution() const noexcept {

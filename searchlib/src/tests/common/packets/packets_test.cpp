@@ -2,12 +2,22 @@
 
 #include <vespa/searchlib/common/mapnames.h>
 #include <vespa/searchlib/common/packets.h>
+#include <vector>
 #include <vespa/vespalib/testkit/testapp.h>
 #include <vespa/vespalib/util/stringfmt.h>
 #include <vespa/fnet/controlpacket.h>
 
 using namespace search::fs4transport;
 using vespalib::compression::CompressionConfig;
+
+
+// ----------------------------------------------------------------------------
+//
+// Utilities
+//
+// ----------------------------------------------------------------------------
+
+#define QRF_RANKTYPE QRF_RANKTYPE_DOUBLE
 
 #define PCODE_BEGIN PCODE_EOL
 #define PCODE_END   PCODE_LastCode
@@ -49,7 +59,7 @@ testEncodeDecode(FS4PersistentPacketStreamer &streamer, FNET_Packet &packet)
     EXPECT_EQUAL(myStreamer.getChannelId(pcode, 1u), chid);
 
     FNET_Packet *ret = streamer.Decode(&buf, plen, pcode, ctx);
-    assert(ret);
+    ASSERT_TRUE(ret);
     if (ret->GetPCODE() == (pcode & PCODE_MASK)) {
         FNET_DataBuffer rhs;
         streamer.Encode(ret, 1u, &rhs);
@@ -315,10 +325,6 @@ TEST("testQueryResultX") {
     src->setDistributionKey(4u);
     src->_coverageDocs = 6u;
     src->_activeDocs = 7u;
-    src->_soonActiveDocs = 8;
-    src->_coverageDegradeReason = 0x17;
-    src->setNodesQueried(12);
-    src->setNodesReplied(11);
     uint32_t sortIndex[3] = { 0u, 1u, 3u /* size of data */}; // numDocs + 1
     src->SetSortDataRef(2, sortIndex, "foo");
     src->SetGroupDataRef("baz", 3u);
@@ -352,12 +358,8 @@ TEST("testQueryResultX") {
         EXPECT_EQUAL(2u, ptr->_totNumDocs);
         EXPECT_EQUAL((search::HitRank)3, ptr->_maxRank);
         EXPECT_EQUAL(4u, ptr->getDistributionKey());
-        EXPECT_EQUAL(ptr->_features & QRF_COVERAGE_NODES ? 12 : 1u, ptr->getNodesQueried());
-        EXPECT_EQUAL(ptr->_features & QRF_COVERAGE_NODES ? 11 : 1u, ptr->getNodesReplied());
-        EXPECT_EQUAL(6u, ptr->_coverageDocs);
-        EXPECT_EQUAL(7u, ptr->_activeDocs);
-        EXPECT_EQUAL(8u, ptr->_soonActiveDocs);
-        EXPECT_EQUAL(0x17u, ptr->_coverageDegradeReason);
+        EXPECT_EQUAL(ptr->_features & QRF_COVERAGE ? 6u : 0u, ptr->_coverageDocs);
+        EXPECT_EQUAL(ptr->_features & QRF_COVERAGE ? 7u : 0u, ptr->_activeDocs);
         if (ptr->_features & QRF_SORTDATA) {
             EXPECT_EQUAL(0u, ptr->_sortIndex[0]);
             EXPECT_EQUAL(1u, ptr->_sortIndex[1]);
@@ -398,7 +400,7 @@ createAndFill_QUERYX()
     EXPECT_EQUAL(0l, src->getTimeout());
     src->setTimeout(fastos::TimeStamp(4*fastos::TimeStamp::MS));
     EXPECT_EQUAL(fastos::TimeStamp(4*fastos::TimeStamp::MS), src->getTimeout());
-    src->setQueryFlags(5u);
+    src->_qflags = 5u;
     src->setRanking("seven");
     src->_numStackItems = 14u;
     src->_propsVector.resize(2);
@@ -419,7 +421,7 @@ verifyQueryX(FS4Packet_QUERYX & queryX, uint32_t features)
     EXPECT_EQUAL(2u, queryX._offset);
     EXPECT_EQUAL(3u, queryX._maxhits);
     EXPECT_EQUAL(fastos::TimeStamp(4*fastos::TimeStamp::MS), queryX.getTimeout());
-    EXPECT_EQUAL(0x1u, queryX.getQueryFlags());  //Filtered
+    EXPECT_EQUAL(0x5u, queryX._qflags);
     if (queryX._features & QF_RANKP) {
         EXPECT_EQUAL("seven", queryX._ranking);
     } else {

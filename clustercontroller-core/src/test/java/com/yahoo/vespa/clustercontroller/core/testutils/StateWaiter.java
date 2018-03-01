@@ -3,7 +3,6 @@ package com.yahoo.vespa.clustercontroller.core.testutils;
 
 import com.yahoo.vdslib.state.ClusterState;
 import com.yahoo.vdslib.state.Node;
-import com.yahoo.vespa.clustercontroller.core.ClusterStateBundle;
 import com.yahoo.vespa.clustercontroller.core.FakeTimer;
 import com.yahoo.vespa.clustercontroller.core.listeners.SystemStateListener;
 
@@ -23,9 +22,9 @@ public class StateWaiter implements SystemStateListener {
         this.timer = timer;
     }
 
-    public void handleNewSystemState(ClusterStateBundle state) {
+    public void handleNewSystemState(ClusterState state) {
         synchronized(timer) {
-            current = state.getBaselineClusterState();
+            current = state;
 
             ++stateUpdates;
             timer.notifyAll();

@@ -20,7 +20,7 @@ import com.yahoo.vespa.applicationmodel.ServiceStatus;
 import com.yahoo.vespa.applicationmodel.ServiceType;
 import com.yahoo.vespa.applicationmodel.TenantId;
 import com.yahoo.vespa.service.monitor.ServiceModel;
-import com.yahoo.vespa.service.monitor.ServiceStatusProvider;
+import com.yahoo.vespa.service.monitor.SlobrokMonitorManager;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,7 +44,7 @@ public class ModelGenerator {
             SuperModel superModel,
             Zone zone,
             List<String> configServerHosts,
-            ServiceStatusProvider serviceStatusProvider) {
+            SlobrokMonitorManager slobrokMonitorManager) {
         Map<ApplicationInstanceReference, ApplicationInstance> applicationInstances = new HashMap<>();
 
         for (ApplicationInfo applicationInfo : superModel.getAllApplicationInfos()) {
@@ -52,7 +52,7 @@ public class ModelGenerator {
             ApplicationInstance applicationInstance = toApplicationInstance(
                     applicationInfo,
                     zone,
-                    serviceStatusProvider);
+                    slobrokMonitorManager);
             applicationInstances.put(applicationInstance.reference(), applicationInstance);
         }
 
@@ -70,7 +70,7 @@ public class ModelGenerator {
     ApplicationInstance toApplicationInstance(
             ApplicationInfo applicationInfo,
             Zone zone,
-            ServiceStatusProvider serviceStatusProvider) {
+            SlobrokMonitorManager slobrokMonitorManager) {
         Map<ServiceClusterKey, Set<ServiceInstance>> groupedServiceInstances = new HashMap<>();
 
         for (HostInfo host : applicationInfo.getModel().getHosts()) {
@@ -80,10 +80,9 @@ public class ModelGenerator {
                 ServiceInstance serviceInstance =
                         toServiceInstance(
                                 applicationInfo.getApplicationId(),
-                                serviceClusterKey.clusterId(),
                                 serviceInfo,
                                 hostName,
-                                serviceStatusProvider);
+                                slobrokMonitorManager);
 
                 if (!groupedServiceInstances.containsKey(serviceClusterKey)) {
                     groupedServiceInstances.put(serviceClusterKey, new HashSet<>());
@@ -115,33 +114,28 @@ public class ModelGenerator {
         return applicationInstance;
     }
 
-    static ClusterId getClusterId(ServiceInfo serviceInfo) {
-        return new ClusterId(serviceInfo.getProperty(CLUSTER_ID_PROPERTY_NAME).orElse(""));
-    }
-
-    private ServiceClusterKey toServiceClusterKey(ServiceInfo serviceInfo) {
-        ClusterId clusterId = getClusterId(serviceInfo);
+    ServiceClusterKey toServiceClusterKey(ServiceInfo serviceInfo) {
+        ClusterId clusterId = new ClusterId(serviceInfo.getProperty(CLUSTER_ID_PROPERTY_NAME).orElse(""));
         ServiceType serviceType = toServiceType(serviceInfo);
         return new ServiceClusterKey(clusterId, serviceType);
     }
 
-    private ServiceInstance toServiceInstance(
+    ServiceInstance toServiceInstance(
             ApplicationId applicationId,
-            ClusterId clusterId,
             ServiceInfo serviceInfo,
             HostName hostName,
-            ServiceStatusProvider serviceStatusProvider) {
+            SlobrokMonitorManager slobrokMonitorManager) {
         ConfigId configId = new ConfigId(serviceInfo.getConfigId());
 
-        ServiceStatus status = serviceStatusProvider.getStatus(
+        ServiceStatus status = slobrokMonitorManager.getStatus(
                 applicationId,
-                clusterId,
-                toServiceType(serviceInfo), configId);
+                toServiceType(serviceInfo),
+                configId);
 
         return new ServiceInstance(configId, hostName, status);
     }
 
-    private ApplicationInstanceId toApplicationInstanceId(ApplicationInfo applicationInfo, Zone zone) {
+    ApplicationInstanceId toApplicationInstanceId(ApplicationInfo applicationInfo, Zone zone) {
         return new ApplicationInstanceId(String.format("%s:%s:%s:%s",
                 applicationInfo.getApplicationId().application().value(),
                 zone.environment().value(),
@@ -149,7 +143,7 @@ public class ModelGenerator {
                 applicationInfo.getApplicationId().instance().value()));
     }
 
-    private ServiceType toServiceType(ServiceInfo serviceInfo) {
+    ServiceType toServiceType(ServiceInfo serviceInfo) {
         return new ServiceType(serviceInfo.getServiceType());
     }
 }

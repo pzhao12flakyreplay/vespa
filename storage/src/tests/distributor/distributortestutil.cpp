@@ -48,7 +48,7 @@ DistributorTestUtil::setupDistributor(int redundancy,
     config.ensurePrimaryPersisted = requirePrimaryToBeWritten;
     auto distribution = std::make_shared<lib::Distribution>(config);
     _node->getComponentRegister().setDistribution(distribution);
-    enableDistributorClusterState(systemState);
+    _distributor->enableClusterState(lib::ClusterState(systemState));
     // This is for all intents and purposes a hack to avoid having the
     // distributor treat setting the distribution explicitly as a signal that
     // it should send RequestBucketInfo to all configured nodes.
@@ -240,7 +240,7 @@ DistributorTestUtil::removeFromBucketDB(const document::BucketId& id)
 void
 DistributorTestUtil::addIdealNodes(const document::BucketId& id)
 {
-    addIdealNodes(*getExternalOperationHandler().getClusterStateBundle().getBaselineClusterState(), id);
+    addIdealNodes(getExternalOperationHandler().getClusterState(), id);
 }
 
 void
@@ -374,22 +374,6 @@ DistributorTestUtil::getBucketSpaceRepo() const {
 const lib::Distribution&
 DistributorTestUtil::getDistribution() const {
     return getBucketSpaceRepo().get(makeBucketSpace()).getDistribution();
-}
-
-std::vector<document::BucketSpace>
-DistributorTestUtil::getBucketSpaces() const
-{
-    std::vector<document::BucketSpace> res;
-    for (const auto &repo : getBucketSpaceRepo()) {
-        res.push_back(repo.first);
-    }
-    return res;
-}
-
-void
-DistributorTestUtil::enableDistributorClusterState(vespalib::stringref state)
-{
-    _distributor->enableClusterStateBundle(lib::ClusterStateBundle(lib::ClusterState(state)));
 }
 
 }

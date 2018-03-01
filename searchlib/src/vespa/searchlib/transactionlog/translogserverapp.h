@@ -14,7 +14,6 @@ namespace search::transactionlog {
 class TransLogServerApp : public config::IFetcherCallback<searchlib::TranslogserverConfig>
 {
 private:
-    mutable std::mutex                                   _lock;
     TransLogServer::SP                                   _tls;
     vespalib::PtrHolder<searchlib::TranslogserverConfig> _tlsConfig;
     config::ConfigFetcher                                _tlsConfigFetcher;
@@ -29,7 +28,7 @@ public:
                       const common::FileHeaderContext &fileHeaderContext);
     ~TransLogServerApp();
 
-    TransLogServer::SP getTransLogServer() const;
+    TransLogServer::SP getTransLogServer() const { return _tls; }
 
     void start();
 };

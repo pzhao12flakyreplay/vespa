@@ -5,7 +5,6 @@ import com.google.inject.Inject;
 import com.yahoo.cloud.config.ConfigserverConfig;
 import com.yahoo.component.Version;
 import com.yahoo.component.Vtag;
-import com.yahoo.concurrent.DaemonThreadFactory;
 import com.yahoo.config.application.api.ApplicationFile;
 import com.yahoo.config.application.api.ApplicationMetaData;
 import com.yahoo.config.application.api.DeployLogger;
@@ -385,8 +384,7 @@ public class ApplicationRepository implements com.yahoo.config.provision.Deploye
     }
 
     void redeployAllApplications(Deployer deployer) throws InterruptedException {
-        ExecutorService deploymentExecutor = Executors.newFixedThreadPool(configserverConfig.numParallelTenantLoaders(),
-                                                                          new DaemonThreadFactory("redeploy apps"));
+        ExecutorService deploymentExecutor = Executors.newFixedThreadPool(configserverConfig.numParallelTenantLoaders());
         tenants.getAllTenants().forEach(tenant -> listApplicationIds(tenant)
                 .forEach(applicationId -> redeployApplication(applicationId, deployer, deploymentExecutor)));
         deploymentExecutor.shutdown();

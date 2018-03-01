@@ -102,6 +102,7 @@ public class SessionPreparer {
                 preparation.writeStateZK();
                 preparation.writeRotZK();
                 preparation.distribute();
+                preparation.reloadDeployFileDistributor();
             }
             log.log(LogLevel.DEBUG, () -> "time used " + params.getTimeoutBudget().timesUsed() +
                     " : " + params.getApplicationId());
@@ -154,7 +155,8 @@ public class SessionPreparer {
                                                               HostName.from(configserverConfig.loadBalancerAddress()),
                                                               configserverConfig.hostedVespa(),
                                                               zone,
-                                                              rotationsSet);
+                                                              rotationsSet,
+                                                              configserverConfig.disableFiledistributor());
             this.preparedModelsBuilder = new PreparedModelsBuilder(modelFactoryRegistry,
                                                                    permanentApplicationPackage,
                                                                    configDefinitionRepo,
@@ -217,6 +219,13 @@ public class SessionPreparer {
             prepareResult.asList().forEach(modelResult -> modelResult.model
                                            .distributeFiles(modelResult.fileDistributionProvider.getFileDistribution()));
             checkTimeout("distribute files");
+        }
+
+        void reloadDeployFileDistributor() {
+            if (prepareResult.asList().isEmpty()) return;
+            PreparedModelsBuilder.PreparedModelResult aModelResult = prepareResult.asList().get(0);
+            aModelResult.model.reloadDeployFileDistributor(aModelResult.fileDistributionProvider.getFileDistribution());
+            checkTimeout("reload all deployed files in file distributor");
         }
 
         ConfigChangeActions result() {

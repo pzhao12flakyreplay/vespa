@@ -196,7 +196,7 @@ PutOperation::insertDatabaseEntryAndScheduleCreateBucket(
                 _bucketSpace.getBucketDatabase().get(lastBucket));
         std::vector<uint16_t> idealState(
                 _bucketSpace.getDistribution().getIdealStorageNodes(
-                    _bucketSpace.getClusterState(), lastBucket, "ui"));
+                    _manager.getClusterState(), lastBucket, "ui"));
         active = ActiveCopy::calculate(idealState, _bucketSpace.getDistribution(),
                                        entry);
         LOG(debug, "Active copies for bucket %s: %s",
@@ -261,7 +261,7 @@ PutOperation::onStart(DistributorMessageSender& sender)
         _msg->getDocumentId().toString().c_str(),
         bid.toString().c_str());
 
-    lib::ClusterState systemState = _bucketSpace.getClusterState();
+    lib::ClusterState systemState = _manager.getClusterState();
 
     // Don't do anything if all nodes are down.
     bool up = false;
@@ -278,7 +278,7 @@ PutOperation::onStart(DistributorMessageSender& sender)
 
         lib::IdealNodeCalculatorImpl idealNodeCalculator;
         idealNodeCalculator.setDistribution(_bucketSpace.getDistribution());
-        idealNodeCalculator.setClusterState(_bucketSpace.getClusterState());
+        idealNodeCalculator.setClusterState(_manager.getClusterState());
         OperationTargetResolverImpl targetResolver(
                 _bucketSpace.getBucketDatabase(),
                 idealNodeCalculator,

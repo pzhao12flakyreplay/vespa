@@ -20,7 +20,6 @@ import java.util.logging.Level;
  * @author lesters
  */
 public class ReservedMacroNames extends Processor {
-
     private static Set<String> reservedNames = getReservedNames();
 
     public ReservedMacroNames(Search search, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
@@ -28,16 +27,14 @@ public class ReservedMacroNames extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (RankProfile rp : rankProfileRegistry.allRankProfiles()) {
             for (String macroName : rp.getMacros().keySet()) {
                 if (reservedNames.contains(macroName)) {
                     deployLogger.log(Level.WARNING, "Macro \"" + macroName + "\" " +
-                                                    "in rank profile \"" + rp.getName() + "\" " +
-                                                    "has a reserved name. This might mean that the macro shadows " +
-                                                    "the built-in function with the same name."
+                            "in rank profile \"" + rp.getName() + "\" " +
+                            "has a reserved name. This might mean that the macro shadows " +
+                            "the built-in function with the same name."
                     );
                 }
             }
@@ -52,5 +49,4 @@ public class ReservedMacroNames extends Processor {
         }
         return names.build();
     }
-
 }

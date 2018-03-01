@@ -7,15 +7,16 @@ import com.yahoo.concurrent.classlock.ClassLocking;
 import com.yahoo.concurrent.classlock.LockInterruptException;
 import com.yahoo.log.LogLevel;
 import com.yahoo.vespa.hosted.node.admin.ContainerNodeSpec;
-import com.yahoo.vespa.hosted.node.admin.configserver.noderepository.NodeRepository;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.Orchestrator;
 import com.yahoo.vespa.hosted.node.admin.maintenance.StorageMaintainer;
 import com.yahoo.vespa.hosted.node.admin.nodeagent.NodeAttributes;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.OrchestratorException;
+import com.yahoo.vespa.hosted.node.admin.noderepository.NodeRepository;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.Orchestrator;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.OrchestratorException;
 import com.yahoo.vespa.hosted.node.admin.provider.NodeAdminStateUpdater;
-import com.yahoo.vespa.hosted.node.admin.configserver.HttpException;
+import com.yahoo.vespa.hosted.node.admin.util.HttpException;
 import com.yahoo.vespa.hosted.provision.Node;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -63,8 +64,8 @@ public class NodeAdminStateUpdaterImpl implements NodeAdminStateUpdater {
     private final String dockerHostHostName;
     private final Duration nodeAdminConvergeStateInterval;
 
-    private final Optional<ClassLocking> classLocking;
-    private Optional<ClassLock> classLock = Optional.empty();
+    private final ClassLocking classLocking;
+    private Optional<ClassLock> classLock;
     private Instant lastTick;
 
     public NodeAdminStateUpdaterImpl(
@@ -75,7 +76,7 @@ public class NodeAdminStateUpdaterImpl implements NodeAdminStateUpdater {
             String dockerHostHostName,
             Clock clock,
             Duration nodeAdminConvergeStateInterval,
-            Optional<ClassLocking> classLocking) {
+            ClassLocking classLocking) {
         log.info(objectToString() + ": Creating object");
         this.nodeRepository = nodeRepository;
         this.orchestrator = orchestrator;
@@ -87,14 +88,12 @@ public class NodeAdminStateUpdaterImpl implements NodeAdminStateUpdater {
         this.lastTick = clock.instant();
 
         this.loopThread = new Thread(() -> {
-            if (classLocking.isPresent()) {
-                log.info(objectToString() + ": Acquiring lock");
-                try {
-                    classLock = Optional.of(classLocking.get().lockWhile(NodeAdminStateUpdater.class, () -> !terminated.get()));
-                } catch (LockInterruptException e) {
-                    classLock = Optional.empty();
-                    return;
-                }
+            log.info(objectToString() + ": Acquiring lock");
+            try {
+                classLock = Optional.of(classLocking.lockWhile(NodeAdminStateUpdater.class, () -> !terminated.get()));
+            } catch (LockInterruptException e) {
+                classLock = Optional.empty();
+                return;
             }
 
             log.info(objectToString() + ": Starting threads and schedulers");
@@ -268,22 +267,35 @@ public class NodeAdminStateUpdaterImpl implements NodeAdminStateUpdater {
                 log.info("Frozen, skipping fetching info from node repository");
                 return;
             }
-
+            final List<ContainerNodeSpec> containersToRun;
             try {
-                final List<ContainerNodeSpec> containersToRun = nodeRepository.getContainersToRun(dockerHostHostName);
+                containersToRun = nodeRepository.getContainersToRun(dockerHostHostName);
+            } catch (Exception e) {
+                log.log(LogLevel.WARNING, "Failed fetching container info from node repository", e);
+                return;
+            }
+            if (containersToRun == null) {
+                log.warning("Got null from node repository");
+                return;
+            }
+            try {
                 nodeAdmin.refreshContainersToRun(containersToRun);
             } catch (Exception e) {
-                log.log(LogLevel.WARNING, "Failed to update which containers should be running", e);
+                log.log(LogLevel.WARNING, "Failed updating node admin: ", e);
             }
         }
     }
 
     private List<String> getNodesInActiveState() {
-        return nodeRepository.getContainersToRun(dockerHostHostName)
-                             .stream()
-                             .filter(nodespec -> nodespec.nodeState == Node.State.active)
-                             .map(nodespec -> nodespec.hostname)
-                             .collect(Collectors.toList());
+        try {
+            return nodeRepository.getContainersToRun(dockerHostHostName)
+                                 .stream()
+                                 .filter(nodespec -> nodespec.nodeState == Node.State.active)
+                                 .map(nodespec -> nodespec.hostname)
+                                 .collect(Collectors.toList());
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to get nodes from node repo", e);
+        }
     }
 
     public void start() {
@@ -296,7 +308,7 @@ public class NodeAdminStateUpdaterImpl implements NodeAdminStateUpdater {
             throw new RuntimeException("Can not re-stop a node agent.");
         }
 
-        classLocking.ifPresent(ClassLocking::interrupt);
+        classLocking.interrupt();
 
         // First we need to stop NodeAdminStateUpdaterImpl thread to make sure no new NodeAgents are spawned
         signalWorkToBeDone();

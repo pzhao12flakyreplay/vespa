@@ -6,7 +6,6 @@ import com.yahoo.container.jaxrs.annotation.Component;
 import com.yahoo.jrt.slobrok.api.Mirror;
 import com.yahoo.vespa.applicationmodel.ApplicationInstance;
 import com.yahoo.vespa.applicationmodel.ApplicationInstanceReference;
-import com.yahoo.vespa.applicationmodel.ClusterId;
 import com.yahoo.vespa.applicationmodel.ConfigId;
 import com.yahoo.vespa.applicationmodel.HostName;
 import com.yahoo.vespa.applicationmodel.ServiceStatus;
@@ -16,7 +15,7 @@ import com.yahoo.vespa.orchestrator.OrchestratorUtil;
 import com.yahoo.vespa.orchestrator.restapi.wire.SlobrokEntryResponse;
 import com.yahoo.vespa.orchestrator.status.HostStatus;
 import com.yahoo.vespa.orchestrator.status.StatusService;
-import com.yahoo.vespa.service.monitor.SlobrokApi;
+import com.yahoo.vespa.service.monitor.SlobrokMonitorManager;
 
 import javax.inject.Inject;
 import javax.ws.rs.GET;
@@ -49,16 +48,16 @@ public class InstanceResource {
     public static final String DEFAULT_SLOBROK_PATTERN = "**";
 
     private final StatusService statusService;
-    private final SlobrokApi slobrokApi;
+    private final SlobrokMonitorManager slobrokMonitorManager;
     private final InstanceLookupService instanceLookupService;
 
     @Inject
     public InstanceResource(@Component InstanceLookupService instanceLookupService,
                             @Component StatusService statusService,
-                            @Component SlobrokApi slobrokApi) {
+                            @Component SlobrokMonitorManager slobrokMonitorManager) {
         this.instanceLookupService = instanceLookupService;
         this.statusService = statusService;
-        this.slobrokApi = slobrokApi;
+        this.slobrokMonitorManager = slobrokMonitorManager;
     }
 
     @GET
@@ -97,7 +96,7 @@ public class InstanceResource {
             pattern = DEFAULT_SLOBROK_PATTERN;
         }
 
-        List<Mirror.Entry> entries = slobrokApi.lookup(applicationId, pattern);
+        List<Mirror.Entry> entries = slobrokMonitorManager.lookup(applicationId, pattern);
         return entries.stream()
                 .map(entry -> new SlobrokEntryResponse(entry.getName(), entry.getSpec()))
                 .collect(Collectors.toList());
@@ -108,15 +107,10 @@ public class InstanceResource {
     @Produces(MediaType.APPLICATION_JSON)
     public ServiceStatus getServiceStatus(
             @PathParam("instanceId") String instanceId,
-            @QueryParam("clusterId") String clusterIdString,
             @QueryParam("serviceType") String serviceTypeString,
             @QueryParam("configId") String configIdString) {
         ApplicationInstanceReference reference = parseInstanceId(instanceId);
         ApplicationId applicationId = OrchestratorUtil.toApplicationId(reference);
-
-        if (clusterIdString == null) {
-            throwBadRequest("Missing clusterId query parameter");
-        }
 
         if (serviceTypeString == null) {
             throwBadRequest("Missing serviceType query parameter");
@@ -126,11 +120,10 @@ public class InstanceResource {
             throwBadRequest("Missing configId query parameter");
         }
 
-        ClusterId clusterId = new ClusterId(clusterIdString);
         ServiceType serviceType = new ServiceType(serviceTypeString);
         ConfigId configId = new ConfigId(configIdString);
 
-        return slobrokApi.getStatus(applicationId, clusterId, serviceType, configId);
+        return slobrokMonitorManager.getStatus(applicationId, serviceType, configId);
     }
 
     static ApplicationInstanceReference parseInstanceId(String instanceIdString) {

@@ -92,7 +92,6 @@ Fdispatch::~Fdispatch()
 
     LOG(debug, "Will close threadpool");
     _mypool->Close();
-    _executor.shutdown().sync();
     LOG(debug, "Has closed threadpool");
     _transportServer.reset();
     _engineAdapter.reset();
@@ -195,8 +194,7 @@ Fdispatch::CheckTempFail()
  * Set up stuff as specified in the fdispatch-rc-file.
  */
 Fdispatch::Fdispatch(const config::ConfigUri &configUri)
-    : _executor(1, 128 * 1024),
-      _mypool(),
+    : _mypool(),
       _engineAdapter(),
       _transportServer(),
       _componentConfig(),
@@ -393,7 +391,7 @@ Fdispatch::Init()
 void
 Fdispatch::logPerformance()
 {
-    _nodeManager->logPerformance(_executor);
+    _nodeManager->logPerformance();
 }
 
 uint32_t

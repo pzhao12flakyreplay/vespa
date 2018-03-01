@@ -48,7 +48,7 @@ JoinOperationTest::testSimple()
     addNodesToBucketDB(document::BucketId(33, 1), "0=250/50/300");
     addNodesToBucketDB(document::BucketId(33, 0x100000001), "0=300/40/200");
 
-    enableDistributorClusterState("distributor:1 storage:1");
+    _distributor->enableClusterState(lib::ClusterState("distributor:1 storage:1"));
 
     JoinOperation op("storage",
                      BucketAndNodes(makeDocumentBucket(document::BucketId(32, 0)),
@@ -108,7 +108,8 @@ JoinOperationTest::sendSparseJoinsToNodesWithoutBothSourceBuckets()
     addNodesToBucketDB(document::BucketId(33, 1), "0=250/50/300,1=250/50/300");
     addNodesToBucketDB(document::BucketId(33, 0x100000001), "0=300/40/200");
 
-    enableDistributorClusterState("distributor:1 storage:2");
+    _distributor->enableClusterState(
+            lib::ClusterState("distributor:1 storage:2"));
 
     JoinOperation op("storage",
                      BucketAndNodes(makeDocumentBucket(document::BucketId(32, 0)),

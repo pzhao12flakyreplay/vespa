@@ -1,7 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.provision.maintenance;
 
-import com.yahoo.cloud.config.ConfigserverConfig;
 import com.yahoo.config.provision.Deployer;
 import com.yahoo.config.provision.Deployment;
 import com.yahoo.config.provision.HostLivenessTracker;
@@ -58,14 +57,12 @@ public class NodeFailer extends Maintainer {
     private final Instant constructionTime;
     private final ThrottlePolicy throttlePolicy;
     private final Metric metric;
-    private final ConfigserverConfig configserverConfig;
 
     public NodeFailer(Deployer deployer, HostLivenessTracker hostLivenessTracker,
                       ServiceMonitor serviceMonitor, NodeRepository nodeRepository,
                       Duration downTimeLimit, Clock clock, Orchestrator orchestrator,
                       ThrottlePolicy throttlePolicy, Metric metric,
-                      JobControl jobControl,
-                      ConfigserverConfig configserverConfig) {
+                      JobControl jobControl) {
         // check ping status every five minutes, but at least twice as often as the down time limit
         super(nodeRepository, min(downTimeLimit.dividedBy(2), Duration.ofMinutes(5)), jobControl);
         this.deployer = deployer;
@@ -77,7 +74,6 @@ public class NodeFailer extends Maintainer {
         this.constructionTime = clock.instant();
         this.throttlePolicy = throttlePolicy;
         this.metric = metric;
-        this.configserverConfig = configserverConfig;
     }
 
     @Override
@@ -130,7 +126,7 @@ public class NodeFailer extends Maintainer {
 
         Map<Node, String> nodesByFailureReason = new HashMap<>();
         for (Node node : nodeRepository().getNodes(Node.State.ready)) {
-            if (expectConfigRequests(node) && ! hasNodeRequestedConfigAfter(node, oldestAcceptableRequestTime)) {
+            if (! hasNodeRequestedConfigAfter(node, oldestAcceptableRequestTime)) {
                 nodesByFailureReason.put(node, "Not receiving config requests from node");
             } else if (node.status().hardwareFailureDescription().isPresent()) {
                 nodesByFailureReason.put(node, "Node has hardware failure");
@@ -139,10 +135,6 @@ public class NodeFailer extends Maintainer {
             }
         }
         return nodesByFailureReason;
-    }
-
-    private boolean expectConfigRequests(Node node) {
-        return !node.type().isDockerHost() || configserverConfig.nodeAdminInContainer();
     }
 
     private boolean hasNodeRequestedConfigAfter(Node node, Instant instant) {
@@ -256,12 +248,11 @@ public class NodeFailer extends Maintainer {
             // If the active node that we are trying to fail is of type host, we need to successfully fail all
             // the children nodes running on it before we fail the host
             boolean allTenantNodesFailedOutSuccessfully = true;
-            String reasonForChildFailure = "Failing due to parent host " + node.hostname() + " failure: " + reason;
             for (Node failingTenantNode : nodeRepository().getChildNodes(node.hostname())) {
                 if (failingTenantNode.state() == Node.State.active) {
-                    allTenantNodesFailedOutSuccessfully &= failActive(failingTenantNode, reasonForChildFailure);
+                    allTenantNodesFailedOutSuccessfully &= failActive(failingTenantNode, reason);
                 } else {
-                    nodeRepository().fail(failingTenantNode.hostname(), Agent.system, reasonForChildFailure);
+                    nodeRepository().fail(failingTenantNode.hostname(), Agent.system, reason);
                 }
             }
 
@@ -274,7 +265,7 @@ public class NodeFailer extends Maintainer {
             catch (RuntimeException e) {
                 // The expected reason for deployment to fail here is that there is no capacity available to redeploy.
                 // In that case we should leave the node in the active state to avoid failing additional nodes.
-                nodeRepository().reactivate(node.hostname(), Agent.system, "Failed to redeploy after being failed by NodeFailer");
+                nodeRepository().reactivate(node.hostname(), Agent.system);
                 log.log(Level.WARNING, "Attempted to fail " + node + " for " + node.allocation().get().owner() +
                                        ", but redeploying without the node failed", e);
                 return false;

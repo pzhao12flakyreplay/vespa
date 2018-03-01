@@ -5,7 +5,6 @@
 #include "storagereply.h"
 #include <vespa/vespalib/util/exceptions.h>
 #include <vespa/document/util/stringutil.h>
-#include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <sstream>
 
 #include <vespa/log/bufferedlogger.h>
@@ -41,14 +40,6 @@ namespace {
     vespalib::Version version5_1(5, 1, 0);
     vespalib::Version version5_0(5, 0, 12);
     vespalib::Version version5_0beta(4, 3, 0);
-}
-
-
-static bool
-suppressEncodeWarning(const api::StorageMessage *msg)
-{
-    const auto *req = dynamic_cast<const api::RequestBucketInfoCommand *>(msg);
-    return ((req != nullptr) && (req->getBucketSpace() != document::FixedBucketSpaces::default_space()));
 }
 
 static mbus::Blob
@@ -119,13 +110,10 @@ StorageProtocol::encode(const vespalib::Version& version,
         }
 
     } catch (std::exception & e) {
-        if (!(version < version6_0 &&
-              suppressEncodeWarning(message.getInternalMessage().get()))) {
-            LOGBP(warning, "Failed to encode %s storage protocol message %s: %s",
-                  version.toString().c_str(),
-                  message.getInternalMessage()->toString().c_str(),
-                  e.what());
-        }
+        LOGBP(warning, "Failed to encode %s storage protocol message %s: %s",
+              version.toString().c_str(),
+              message.getInternalMessage()->toString().c_str(),
+              e.what());
     }
 
     return mbus::Blob(0);

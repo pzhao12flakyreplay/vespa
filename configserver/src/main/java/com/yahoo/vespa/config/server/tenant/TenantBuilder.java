@@ -90,8 +90,9 @@ public class TenantBuilder {
      * Create a real tenant from the properties given by this builder.
      *
      * @return a new {@link Tenant} instance.
+     * @throws Exception if building fails
      */
-    public Tenant build() {
+    public Tenant build() throws Exception {
         createTenantRequestHandler();
         createApplicationRepo();
         createRemoteSessionFactory(componentRegistry.getClock());
@@ -139,7 +140,7 @@ public class TenantBuilder {
 
     private void createSessionCounter() {
         if (sessionCounter == null) {
-            sessionCounter = new SessionCounter(componentRegistry.getConfigCurator(), tenant);
+            sessionCounter = new SessionCounter(componentRegistry.getCurator(), tenant);
         }
     }
 
@@ -168,7 +169,7 @@ public class TenantBuilder {
         }
     }
 
-    private void createRemoteSessionRepo() {
+    private void createRemoteSessionRepo() throws Exception {
         if (remoteSessionRepo == null) {
             remoteSessionRepo = new RemoteSessionRepo(componentRegistry.getCurator(),
                     remoteSessionFactory,
@@ -176,8 +177,6 @@ public class TenantBuilder {
                     tenant,
                     applicationRepo,
                     componentRegistry.getMetrics().getOrCreateMetricUpdater(Metrics.createDimensions(tenant)),
-                    // TODO: Check if we can avoid using one executor service per tenant. Either one for all
-                    // or have a few executors and hash on tenant name to find out which one to use here
                     createSingleThreadedExecutorService(RemoteSessionRepo.class.getName()));
         }
     }

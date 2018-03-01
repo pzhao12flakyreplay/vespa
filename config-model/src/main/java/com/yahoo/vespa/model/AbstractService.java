@@ -6,6 +6,7 @@ import com.yahoo.config.model.api.PortInfo;
 import com.yahoo.config.model.api.ServiceInfo;
 import com.yahoo.config.model.producer.AbstractConfigProducer;
 import com.yahoo.vespa.defaults.Defaults;
+import com.yahoo.vespa.filedistribution.PathDoesNotExistException;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -501,10 +502,18 @@ public abstract class AbstractService extends AbstractConfigProducer<AbstractCon
      * @return the file reference hash
      */
     public FileReference sendFile(String relativePath) {
-        return getRoot().getFileDistributor().sendFileToHost(relativePath, getHost());
+        try {
+            return getRoot().getFileDistributor().sendFileToHost(relativePath, getHost());
+        } catch (PathDoesNotExistException e) {
+            throw new RuntimeException("File does not exist: '" + relativePath + "'.");
+        }
     }
     public FileReference sendUri(String uri) {
-        return getRoot().getFileDistributor().sendUriToHost(uri, getHost());
+        try {
+            return getRoot().getFileDistributor().sendUriToHost(uri, getHost());
+        } catch (PathDoesNotExistException e) {
+            throw new RuntimeException("Uri does not exist: '" + uri + "'.");
+        }
     }
 
     /**

@@ -2,7 +2,6 @@
 package com.yahoo.vespa.hosted.provision.maintenance;
 
 import com.google.inject.Inject;
-import com.yahoo.cloud.config.ConfigserverConfig;
 import com.yahoo.component.AbstractComponent;
 import com.yahoo.config.provision.Deployer;
 import com.yahoo.config.provision.Environment;
@@ -42,6 +41,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
     private final ReservationExpirer reservationExpirer;
     private final InactiveExpirer inactiveExpirer;
     private final RetiredExpirer retiredExpirer;
+    private final RetiredEarlyExpirer retiredEarlyExpirer;
     private final FailedExpirer failedExpirer;
     private final DirtyExpirer dirtyExpirer;
     private final ProvisionedExpirer provisionedExpirer;
@@ -54,25 +54,23 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
     @Inject
     public NodeRepositoryMaintenance(NodeRepository nodeRepository, Deployer deployer, Curator curator,
                                      HostLivenessTracker hostLivenessTracker, ServiceMonitor serviceMonitor, 
-                                     Zone zone, Orchestrator orchestrator, Metric metric,
-                                     ConfigserverConfig configserverConfig) {
-        this(nodeRepository, deployer, curator, hostLivenessTracker, serviceMonitor, zone, Clock.systemUTC(),
-                orchestrator, metric, configserverConfig);
+                                     Zone zone, Orchestrator orchestrator, Metric metric) {
+        this(nodeRepository, deployer, curator, hostLivenessTracker, serviceMonitor, zone, Clock.systemUTC(), orchestrator, metric);
     }
 
     public NodeRepositoryMaintenance(NodeRepository nodeRepository, Deployer deployer, Curator curator,
-                                     HostLivenessTracker hostLivenessTracker, ServiceMonitor serviceMonitor,
-                                     Zone zone, Clock clock, Orchestrator orchestrator, Metric metric,
-                                     ConfigserverConfig configserverConfig) {
+                                     HostLivenessTracker hostLivenessTracker, ServiceMonitor serviceMonitor, 
+                                     Zone zone, Clock clock, Orchestrator orchestrator, Metric metric) {
         DefaultTimes defaults = new DefaultTimes(zone.environment());
         jobControl = new JobControl(nodeRepository.database());
 
-        nodeFailer = new NodeFailer(deployer, hostLivenessTracker, serviceMonitor, nodeRepository, durationFromEnv("fail_grace").orElse(defaults.failGrace), clock, orchestrator, throttlePolicyFromEnv("throttle_policy").orElse(defaults.throttlePolicy), metric, jobControl, configserverConfig);
+        nodeFailer = new NodeFailer(deployer, hostLivenessTracker, serviceMonitor, nodeRepository, durationFromEnv("fail_grace").orElse(defaults.failGrace), clock, orchestrator, throttlePolicyFromEnv("throttle_policy").orElse(defaults.throttlePolicy), metric, jobControl);
         periodicApplicationMaintainer = new PeriodicApplicationMaintainer(deployer, nodeRepository, durationFromEnv("periodic_redeploy_interval").orElse(defaults.periodicRedeployInterval), jobControl);
         operatorChangeApplicationMaintainer = new OperatorChangeApplicationMaintainer(deployer, nodeRepository, clock, durationFromEnv("operator_change_redeploy_interval").orElse(defaults.operatorChangeRedeployInterval), jobControl);
         zooKeeperAccessMaintainer = new ZooKeeperAccessMaintainer(nodeRepository, curator, durationFromEnv("zookeeper_access_maintenance_interval").orElse(defaults.zooKeeperAccessMaintenanceInterval), jobControl);
         reservationExpirer = new ReservationExpirer(nodeRepository, clock, durationFromEnv("reservation_expiry").orElse(defaults.reservationExpiry), jobControl);
-        retiredExpirer = new RetiredExpirer(nodeRepository, orchestrator, deployer, clock, durationFromEnv("retired_interval").orElse(defaults.retiredInterval), durationFromEnv("retired_expiry").orElse(defaults.retiredExpiry), jobControl);
+        retiredExpirer = new RetiredExpirer(nodeRepository, deployer, clock, durationFromEnv("retired_expiry").orElse(defaults.retiredExpiry), jobControl);
+        retiredEarlyExpirer = new RetiredEarlyExpirer(nodeRepository, durationFromEnv("retired_early_interval").orElse(defaults.retiredEarlyInterval), jobControl, deployer, orchestrator);
         inactiveExpirer = new InactiveExpirer(nodeRepository, clock, durationFromEnv("inactive_expiry").orElse(defaults.inactiveExpiry), jobControl);
         failedExpirer = new FailedExpirer(nodeRepository, zone, clock, durationFromEnv("failed_expirer_interval").orElse(defaults.failedExpirerInterval), jobControl);
         dirtyExpirer = new DirtyExpirer(nodeRepository, clock, durationFromEnv("dirty_expiry").orElse(defaults.dirtyExpiry), jobControl);
@@ -95,6 +93,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         reservationExpirer.deconstruct();
         inactiveExpirer.deconstruct();
         retiredExpirer.deconstruct();
+        retiredEarlyExpirer.deconstruct();
         failedExpirer.deconstruct();
         dirtyExpirer.deconstruct();
         nodeRebooter.deconstruct();
@@ -141,7 +140,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
         private final Duration rebootInterval;
         private final Duration nodeRetirerInterval;
         private final Duration metricsInterval;
-        private final Duration retiredInterval;
+        private final Duration retiredEarlyInterval;
 
         private final NodeFailer.ThrottlePolicy throttlePolicy;
 
@@ -156,7 +155,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
                 reservationExpiry = Duration.ofMinutes(20); // same as deployment timeout
                 inactiveExpiry = Duration.ofHours(4); // enough time for the application owner to discover and redeploy
                 retiredExpiry = Duration.ofDays(4); // enough time to migrate data
-                retiredInterval = Duration.ofMinutes(29);
+                retiredEarlyInterval = Duration.ofMinutes(29);
                 failedExpirerInterval = Duration.ofMinutes(10);
                 dirtyExpiry = Duration.ofHours(2); // enough time to clean the node
                 provisionedExpiry = Duration.ofHours(4);
@@ -174,7 +173,7 @@ public class NodeRepositoryMaintenance extends AbstractComponent {
                 reservationExpiry = Duration.ofMinutes(10); // Need to be long enough for deployment to be finished for all config model versions
                 inactiveExpiry = Duration.ofSeconds(2); // support interactive wipe start over
                 retiredExpiry = Duration.ofMinutes(1);
-                retiredInterval = Duration.ofMinutes(5);
+                retiredEarlyInterval = Duration.ofMinutes(5);
                 failedExpirerInterval = Duration.ofMinutes(10);
                 dirtyExpiry = Duration.ofMinutes(30);
                 provisionedExpiry = Duration.ofHours(4);

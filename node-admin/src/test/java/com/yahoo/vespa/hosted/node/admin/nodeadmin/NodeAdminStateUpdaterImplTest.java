@@ -4,17 +4,17 @@ package com.yahoo.vespa.hosted.node.admin.nodeadmin;
 import com.yahoo.test.ManualClock;
 import com.yahoo.vespa.hosted.node.admin.ContainerNodeSpec;
 import com.yahoo.vespa.hosted.node.admin.maintenance.StorageMaintainer;
-import com.yahoo.vespa.hosted.node.admin.configserver.noderepository.NodeRepository;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.Orchestrator;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.OrchestratorException;
+import com.yahoo.vespa.hosted.node.admin.noderepository.NodeRepository;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.Orchestrator;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.OrchestratorException;
 import com.yahoo.vespa.hosted.node.admin.provider.NodeAdminStateUpdater;
 import com.yahoo.vespa.hosted.provision.Node;
 import org.junit.Test;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -47,12 +47,11 @@ public class NodeAdminStateUpdaterImplTest {
     private final Duration convergeStateInterval = Duration.ofSeconds(30);
 
     private final NodeAdminStateUpdaterImpl refresher = spy(new NodeAdminStateUpdaterImpl(
-            nodeRepository, orchestrator, storageMaintainer, nodeAdmin, parentHostname, clock,
-            convergeStateInterval, Optional.empty()));
+            nodeRepository, orchestrator, storageMaintainer, nodeAdmin, parentHostname, clock, convergeStateInterval, null));
 
 
     @Test
-    public void testStateConvergence() {
+    public void testStateConvergence() throws IOException {
         mockNodeRepo(4);
         List<String> activeHostnames = nodeRepository.getContainersToRun(parentHostname).stream()
                 .map(node -> node.hostname)
@@ -154,7 +153,7 @@ public class NodeAdminStateUpdaterImplTest {
     }
 
     @Test
-    public void half_transition_revert() {
+    public void half_transition_revert() throws IOException {
         mockNodeRepo(3);
 
         // Initially everything is frozen to force convergence
@@ -181,7 +180,7 @@ public class NodeAdminStateUpdaterImplTest {
         verify(nodeAdmin, times(2)).setFrozen(eq(false)); // Make sure that we unfreeze!
     }
 
-    private void mockNodeRepo(int numberOfNodes) {
+    private void mockNodeRepo(int numberOfNodes) throws IOException {
         List<ContainerNodeSpec> containersToRun = IntStream.range(0, numberOfNodes)
                 .mapToObj(i -> new ContainerNodeSpec.Builder()
                         .hostname("host" + i + ".test.yahoo.com")

@@ -33,10 +33,8 @@ public class ImportedFieldsInSummaryValidatorTestCase {
 
         public void resolve() {
             super.resolve();
-            new ImportedFieldsInSummayValidator(childSearch, null, null, null).process(true);
+            new ImportedFieldsInSummayValidator(childSearch, null, null, null).process();
         }
-
     }
-
 }
 

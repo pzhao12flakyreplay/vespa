@@ -12,15 +12,12 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
  * @author baldersheim
  */
 public class DiversitySettingsValidator extends Processor {
-
     public DiversitySettingsValidator(Search search, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
         super(search, deployLogger, rankProfileRegistry, queryProfiles);
     }
 
     @Override
-    public void process(boolean validate) {
-        if ( ! validate) return;
-
+    public void process() {
         for (RankProfile rankProfile : rankProfileRegistry.localRankProfiles(search)) {
             if (rankProfile.getMatchPhaseSettings() != null && rankProfile.getMatchPhaseSettings().getDiversity() != null) {
                 validate(rankProfile, rankProfile.getMatchPhaseSettings().getDiversity());
@@ -30,21 +27,20 @@ public class DiversitySettingsValidator extends Processor {
     private void validate(RankProfile rankProfile, RankProfile.DiversitySettings settings) {
         String attributeName = settings.getAttribute();
         new AttributeValidator(search.getName(), rankProfile.getName(),
-                               search.getAttribute(attributeName), attributeName).validate();
+                search.getAttribute(attributeName), attributeName).validate();
     }
 
     private static class AttributeValidator extends  MatchPhaseSettingsValidator.AttributeValidator {
-
         public AttributeValidator(String searchName, String rankProfileName, Attribute attribute, String attributeName) {
             super(searchName, rankProfileName, attribute, attributeName);
         }
 
         protected void validateThatAttributeIsSingleAndNotPredicate() {
-            if ( ! attribute.getCollectionType().equals(Attribute.CollectionType.SINGLE) ||
+            if (!attribute.getCollectionType().equals(Attribute.CollectionType.SINGLE) ||
                  attribute.getType().equals(Attribute.Type.PREDICATE))
             {
                 failValidation("must be single value numeric, or enumerated attribute, but it is '"
-                               + attribute.getDataType().getName() + "'");
+                        + attribute.getDataType().getName() + "'");
             }
         }
 
@@ -58,7 +54,5 @@ public class DiversitySettingsValidator extends Processor {
         public String getValidationType() {
             return "diversity";
         }
-
     }
-
 }

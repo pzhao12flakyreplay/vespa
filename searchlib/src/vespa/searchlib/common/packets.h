@@ -21,7 +21,6 @@ using vespalib::string;
 enum fnet_feature_masks {
     FNET_QRF_SUPPORTED_MASK = (QRF_MLD |
                                QRF_SORTDATA |
-                               QRF_COVERAGE_NODES |
                                QRF_EXTENDED_COVERAGE |
                                QRF_COVERAGE |
                                QRF_GROUPDATA |
@@ -42,12 +41,6 @@ enum fnet_feature_masks {
                                GDF_RESCLASSNAME |
                                GDF_PROPERTIES |
                                GDF_FLAGS),
-    ACTIVE_QUERY_FLAGS = (QFLAG_EXTENDED_COVERAGE |
-                          QFLAG_COVERAGE_NODES |
-                          QFLAG_ESTIMATE |
-                          QFLAG_DROP_SORTDATA |
-                          QFLAG_NO_RESULTCACHE |
-                          QFLAG_DUMP_FEATURES),
 
     FNET_MQF_SUPPORTED_MASK = (MQF_QFLAGS),
 
@@ -72,7 +65,8 @@ private:
     uint32_t      _used;
 
 public:
-    PacketArray(FNET_Packet **arr = nullptr, uint32_t size = 0)
+    PacketArray(FNET_Packet **arr = NULL,
+                      uint32_t size = 0)
         : _extArray(arr),
           _array(arr),
           _size(size),
@@ -380,8 +374,6 @@ private:
     FS4Packet_QUERYRESULTX& operator=(const FS4Packet_QUERYRESULTX &);
 
     uint32_t _distributionKey;
-    uint16_t _nodesQueried;
-    uint16_t _nodesReplied;
 
 public:
     uint32_t _features;      // see queryresult_features
@@ -433,11 +425,8 @@ public:
     vespalib::string toString(uint32_t indent) const override ;
     uint32_t getDistributionKey() const { return _distributionKey; }
     void setDistributionKey(uint32_t key) { _distributionKey = key; }
-    uint16_t getNodesQueried() const { return _nodesQueried; }
-    void setNodesQueried(uint16_t key) { _nodesQueried = key; }
-    uint16_t getNodesReplied() const { return _nodesReplied; }
-    void setNodesReplied(uint16_t key) { _nodesReplied = key; }
 };
+
 //==========================================================================
 
 class FS4Packet_QUERYX : public FS4Packet
@@ -447,12 +436,12 @@ private:
     FS4Packet_QUERYX& operator=(const FS4Packet_QUERYX &);
 
     uint32_t  _timeout;
-    uint32_t  _qflags;
 
 public:
     uint32_t  _features;      // see query_features
     uint32_t  _offset;
     uint32_t  _maxhits;
+    uint32_t  _qflags;
     string    _ranking;       // if QF_RANKP
     PropsVector _propsVector; // if QF_PROPERTIES
     string    _sortSpec;      // if QF_SORTSPEC
@@ -463,7 +452,6 @@ public:
     uint32_t  _numStackItems; // if QF_PARSEDQUERY
     string    _stackDump;     // if QF_PARSEDQUERY
 
-    void setQueryFlags(uint32_t qflags) { _qflags = ACTIVE_QUERY_FLAGS & qflags; }
     void setRanking(const vespalib::stringref &ranking) { _ranking = ranking; }
     void setSortSpec(const vespalib::stringref &spec) { _sortSpec = spec; }
     void setGroupSpec(const vespalib::stringref &spec) { _groupSpec = spec; }
@@ -472,7 +460,6 @@ public:
     void setStackDump(const vespalib::stringref &buf) { _stackDump = buf; }
     void setTimeout(const fastos::TimeStamp & timeout);
     fastos::TimeStamp getTimeout() const;
-    uint32_t getQueryFlags() const { return _qflags; }
 
     explicit FS4Packet_QUERYX();
     ~FS4Packet_QUERYX();

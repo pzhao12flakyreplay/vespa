@@ -43,8 +43,7 @@ public class NodePrioritizer {
     private final Set<Node> spareHosts;
     private final Map<Node, ResourceCapacity> headroomHosts;
 
-    NodePrioritizer(List<Node> allNodes, ApplicationId appId, ClusterSpec clusterSpec, NodeSpec nodeSpec,
-                    NodeFlavors nodeFlavors, int spares, NameResolver nameResolver) {
+    NodePrioritizer(List<Node> allNodes, ApplicationId appId, ClusterSpec clusterSpec, NodeSpec nodeSpec, NodeFlavors nodeFlavors, int spares, NameResolver nameResolver) {
         this.allNodes = Collections.unmodifiableList(allNodes);
         this.requestedNodes = nodeSpec;
         this.clusterSpec = clusterSpec;
@@ -173,33 +172,36 @@ public class NodePrioritizer {
     void addNewDockerNodes() {
         if (!isDocker) return;
         DockerHostCapacity capacity = new DockerHostCapacity(allNodes);
-        ResourceCapacity wantedResourceCapacity = ResourceCapacity.of(getFlavor(requestedNodes));
-        NodeList list = new NodeList(allNodes);
 
         for (Node node : allNodes) {
-            if (node.type() != NodeType.host) continue;
-            if (node.state() != Node.State.active) continue;
-            if (node.status().wantToRetire()) continue;
+            if (node.type() == NodeType.host && node.state() == Node.State.active) {
+                boolean conflictingCluster = false;
+                NodeList list = new NodeList(allNodes);
+                NodeList childrenWithSameApp = list.childNodes(node).owner(appId);
+                for (Node child : childrenWithSameApp.asList()) {
+                    // Look for nodes from the same cluster
+                    if (child.allocation().get().membership().cluster().id().equals(clusterSpec.id())) {
+                        conflictingCluster = true;
+                        break;
+                    }
+                }
 
-            boolean hostHasCapacityForWantedFlavor = capacity.hasCapacity(node, wantedResourceCapacity);
-            boolean conflictingCluster = list.childrenOf(node).owner(appId).asList().stream()
-                                             .anyMatch(child -> child.allocation().get().membership().cluster().id().equals(clusterSpec.id()));
-
-            if (!hostHasCapacityForWantedFlavor || conflictingCluster) continue;
-
-            Set<String> ipAddresses = DockerHostCapacity.findFreeIps(node, allNodes);
-            if (ipAddresses.isEmpty()) continue;
-            String ipAddress = ipAddresses.stream().findFirst().get();
-            Optional<String> hostname = nameResolver.getHostname(ipAddress);
-            if (!hostname.isPresent()) continue;
-            Node newNode = Node.createDockerNode("fake-" + hostname.get(),
-                                                 Collections.singleton(ipAddress),
-                                                 Collections.emptySet(), hostname.get(),
-                                                 Optional.of(node.hostname()), getFlavor(requestedNodes),
-                                                 NodeType.tenant);
-            PrioritizableNode nodePri = toNodePriority(newNode, false, true);
-            if (!nodePri.violatesSpares || isAllocatingForReplacement) {
-                nodes.put(newNode, nodePri);
+                if (!conflictingCluster && capacity.hasCapacity(node, ResourceCapacity.of(getFlavor(requestedNodes)))) {
+                    Set<String> ipAddresses = DockerHostCapacity.findFreeIps(node, allNodes);
+                    if (ipAddresses.isEmpty()) continue;
+                    String ipAddress = ipAddresses.stream().findFirst().get();
+                    Optional<String> hostname = nameResolver.getHostname(ipAddress);
+                    if (!hostname.isPresent()) continue;
+                    Node newNode = Node.createDockerNode("fake-" + hostname.get(),
+                                                         Collections.singleton(ipAddress),
+                                                         Collections.emptySet(), hostname.get(),
+                                                         Optional.of(node.hostname()), getFlavor(requestedNodes),
+                                                         NodeType.tenant);
+                    PrioritizableNode nodePri = toNodePriority(newNode, false, true);
+                    if (!nodePri.violatesSpares || isAllocatingForReplacement) {
+                        nodes.put(newNode, nodePri);
+                    }
+                }
             }
         }
     }
@@ -266,11 +268,11 @@ public class NodePrioritizer {
 
     static boolean isPreferredNodeToBeReloacted(List<Node> nodes, Node node, Node parent) {
         NodeList list = new NodeList(nodes);
-        return list.childrenOf(parent).asList().stream()
-                   .sorted(NodePrioritizer::compareForRelocation)
-                   .findFirst()
-                   .filter(n -> n.equals(node))
-                   .isPresent();
+        return list.childNodes(parent).asList().stream()
+                .sorted(NodePrioritizer::compareForRelocation)
+                .findFirst()
+                .filter(n -> n.equals(node))
+                .isPresent();
     }
 
     private boolean isReplacement(long nofNodesInCluster, long nodeFailedNodes) {

@@ -68,20 +68,14 @@ public class ZmsClientMock implements ZmsClient {
         if (application == null) {
             throw zmsException(400, "Application '%s' not found", applicationName);
         }
-        return isHostedOperator(identity) || domain.admins.contains(identity) || application.acl.get(action).contains(identity);
+        return domain.admins.contains(identity) || application.acl.get(action).contains(identity);
     }
 
     @Override
     public boolean hasTenantAdminAccess(AthenzIdentity identity, AthenzDomain tenantDomain) {
         log("hasTenantAdminAccess(principal='%s', tenantDomain='%s')", identity, tenantDomain);
-        return isHostedOperator(identity) || isDomainAdmin(identity, tenantDomain) ||
+        return isDomainAdmin(identity, tenantDomain) ||
                 getDomainOrThrow(tenantDomain, true).tenantAdmins.contains(identity);
-    }
-
-    @Override
-    public boolean hasHostedOperatorAccess(AthenzIdentity identity) {
-        log("hasHostedOperatorAccess(identity='%s')", identity);
-        return isHostedOperator(identity);
     }
 
     @Override
@@ -113,10 +107,6 @@ public class ZmsClientMock implements ZmsClient {
             throw zmsException(400, "Domain not a Vespa tenant: '%s'", domainName);
         }
         return domain;
-    }
-
-    private boolean isHostedOperator(AthenzIdentity identity) {
-        return athenz.hostedOperators.contains(identity);
     }
 
     private static ZmsException zmsException(int code, String message, Object... args) {

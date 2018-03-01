@@ -6,6 +6,7 @@ import com.yahoo.component.Version;
 import com.yahoo.component.Vtag;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.vespa.hosted.controller.Application;
+import com.yahoo.vespa.hosted.controller.ApplicationController;
 import com.yahoo.vespa.hosted.controller.Controller;
 import com.yahoo.vespa.hosted.controller.ControllerTester;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
@@ -20,6 +21,7 @@ import java.net.URISyntaxException;
 import java.time.Duration;
 import java.util.List;
 
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.component;
 import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.productionUsEast3;
 import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.productionUsWest1;
 import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.stagingTest;
@@ -243,31 +245,68 @@ public class VersionStatusTest {
     }
 
     @Test
-    public void testConfidenceOverride() {
+    public void testIgnoreConfidence() {
         DeploymentTester tester = new DeploymentTester();
+
         Version version0 = new Version("5.0");
         tester.upgradeSystem(version0);
 
-        // Create and deploy application on current version
-        Application app = tester.createAndDeploy("app", 1, "canary");
-        tester.updateVersionStatus();
-        assertEquals(Confidence.high, confidence(tester.controller(), version0));
+        // Setup applications - all running on version0
+        Application canary0 = tester.createAndDeploy("canary0", 1, "canary");
+        Application canary1 = tester.createAndDeploy("canary1", 2, "canary");
+        Application default0 = tester.createAndDeploy("default0", 3, "default");
+        Application default1 = tester.createAndDeploy("default1", 4, "default");
+        Application default2 = tester.createAndDeploy("default2", 5, "default");
+        Application default3 = tester.createAndDeploy("default3", 6, "default");
+        Application default4 = tester.createAndDeploy("default4", 7, "default");
 
-        // Override confidence
-        tester.upgrader().overrideConfidence(version0, Confidence.broken);
-        tester.updateVersionStatus();
-        assertEquals(Confidence.broken, confidence(tester.controller(), version0));
-
-        // New version is released and application upgrades
+        // New version is released
         Version version1 = new Version("5.1");
         tester.upgradeSystem(version1);
-        tester.completeUpgrade(app, version1, "canary");
-        tester.updateVersionStatus();
-        assertEquals(Confidence.high, confidence(tester.controller(), version1));
 
-        // Stale override was removed
-        assertFalse("Stale override removed", tester.controller().curator().readConfidenceOverrides()
-                                                    .keySet().contains(version0));
+        // All canaries upgrade successfully, 1 default apps ok, 3 default apps fail
+        tester.completeUpgrade(canary0, version1, "canary");
+        tester.completeUpgrade(canary1, version1, "canary");
+        tester.upgradeSystem(version1);
+        tester.completeUpgrade(default0, version1, "default");
+        tester.completeUpgradeWithError(default1, version1, "default", stagingTest);
+        tester.completeUpgradeWithError(default2, version1, "default", stagingTest);
+        tester.completeUpgradeWithError(default3, version1, "default", stagingTest);
+        tester.completeUpgradeWithError(default4, version1, "default", stagingTest);
+        tester.updateVersionStatus();
+        assertEquals("Canaries have upgraded, 1 of 4 default apps failing: Broken",
+                     Confidence.broken, confidence(tester.controller(), version1));
+
+        // Same as above, but ignore confidence calculations, will force normal confidence
+        tester.controllerTester().curator().writeIgnoreConfidence(true);
+        tester.updateVersionStatus();
+        assertEquals("Canaries have upgraded, 1 of 4 default apps failing, but confidence ignored: Low",
+                     Confidence.normal, confidence(tester.controller(), version1));
+        tester.controllerTester().curator().writeIgnoreConfidence(false);
+    }
+
+    @Test
+    public void testComputeIgnoresVersionWithUnknownGitMetadata() {
+        ControllerTester tester = new ControllerTester();
+        ApplicationController applications = tester.controller().applications();
+
+        tester.gitHub()
+                .mockAny(false)
+                .knownTag(Vtag.currentVersion.toFullString(), "foo") // controller
+                .knownTag("6.1.0", "bar"); // config server
+
+        Version versionWithUnknownTag = new Version("6.1.2");
+
+        Application app = tester.createAndDeploy("tenant1", "domain1","application1", Environment.test, 11);
+        tester.clock().advance(Duration.ofMillis(1));
+        applications.notifyJobCompletion(DeploymentTester.jobReport(app, component, true));
+        applications.notifyJobCompletion(DeploymentTester.jobReport(app, systemTest, true));
+
+        List<VespaVersion> vespaVersions = VersionStatus.compute(tester.controller()).versions();
+
+        assertEquals(2, vespaVersions.size()); // controller and config server
+        assertTrue("Version referencing unknown tag is skipped", 
+                   vespaVersions.stream().noneMatch(v -> v.versionNumber().equals(versionWithUnknownTag)));
     }
 
     private Confidence confidence(Controller controller, Version version) {

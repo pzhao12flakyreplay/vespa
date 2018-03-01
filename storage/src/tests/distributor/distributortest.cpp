@@ -9,7 +9,6 @@
 #include <vespa/storageapi/message/removelocation.h>
 #include <vespa/storageframework/defaultimplementation/thread/threadpoolimpl.h>
 #include <tests/distributor/distributortestutil.h>
-#include <vespa/document/bucket/fixed_bucket_spaces.h>
 #include <vespa/document/test/make_document_bucket.h>
 #include <vespa/document/test/make_bucket_space.h>
 #include <vespa/storage/config/config-stor-distributormanager.h>
@@ -19,7 +18,6 @@
 
 using document::test::makeDocumentBucket;
 using document::test::makeBucketSpace;
-using document::FixedBucketSpaces;
 
 namespace storage {
 
@@ -60,9 +58,6 @@ class Distributor_Test : public CppUnit::TestFixture,
     CPPUNIT_TEST(closing_aborts_priority_queued_client_requests);
     CPPUNIT_TEST_SUITE_END();
 
-public:
-    Distributor_Test();
-
 protected:
     void testOperationGeneration();
     void testOperationsGeneratedAndStartedWithoutDuplicates();
@@ -94,14 +89,9 @@ protected:
     void internal_messages_are_started_in_fifo_order_batch();
     void closing_aborts_priority_queued_client_requests();
 
-    void assertBucketSpaceStats(size_t expBucketPending, uint16_t node, const vespalib::string &bucketSpace,
-                                const BucketSpacesStatsProvider::PerNodeBucketSpacesStats &stats);
-    std::vector<document::BucketSpace> _bucketSpaces;
-
 public:
     void setUp() override {
         createLinks();
-        _bucketSpaces = getBucketSpaces();
     };
 
     void tearDown() override {
@@ -207,13 +197,6 @@ private:
 
 CPPUNIT_TEST_SUITE_REGISTRATION(Distributor_Test);
 
-Distributor_Test::Distributor_Test()
-    : CppUnit::TestFixture(),
-    DistributorTestUtil(),
-    _bucketSpaces()
-{
-}
-
 void
 Distributor_Test::testOperationGeneration()
 {
@@ -256,7 +239,8 @@ Distributor_Test::testRecoveryModeOnClusterStateChange()
 {
     setupDistributor(Redundancy(1), NodeCount(2),
                      "storage:1 .0.s:d distributor:1");
-    enableDistributorClusterState("storage:1 distributor:1");
+    _distributor->enableClusterState(
+            lib::ClusterState("storage:1 distributor:1"));
 
     CPPUNIT_ASSERT(_distributor->isInRecoveryMode());
     for (uint32_t i = 0; i < 3; ++i) {
@@ -269,7 +253,7 @@ Distributor_Test::testRecoveryModeOnClusterStateChange()
     tick();
     CPPUNIT_ASSERT(!_distributor->isInRecoveryMode());
 
-    enableDistributorClusterState("storage:2 distributor:1");
+    _distributor->enableClusterState(lib::ClusterState("storage:2 distributor:1"));
     CPPUNIT_ASSERT(_distributor->isInRecoveryMode());
 }
 
@@ -338,7 +322,7 @@ Distributor_Test::testContainsTimeStatement()
 void
 Distributor_Test::testUpdateBucketDatabase()
 {
-    enableDistributorClusterState("distributor:1 storage:3");
+    _distributor->enableClusterState(lib::ClusterState("distributor:1 storage:3"));
 
     CPPUNIT_ASSERT_EQUAL(
             std::string("BucketId(0x4000000000000001) : "
@@ -631,38 +615,19 @@ Distributor_Test::mergeStatsAreAccumulatedDuringDatabaseIteration()
         NodeMaintenanceStats wanted;
         wanted.syncing = 1;
         wanted.copyingOut = 2;
-        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(0, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(0));
     }
     {
         NodeMaintenanceStats wanted;
         wanted.movingOut = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(1, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(1));
     }
     {
         NodeMaintenanceStats wanted;
         wanted.syncing = 1;
         wanted.copyingIn = 2;
-        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(2, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(2));
     }
-    auto bucketStats = _distributor->getBucketSpacesStats();
-    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(3), bucketStats.size());
-    assertBucketSpaceStats(1, 0, "default", bucketStats);
-    assertBucketSpaceStats(0, 1, "default", bucketStats);
-    assertBucketSpaceStats(3, 2, "default", bucketStats);
-}
-
-void
-Distributor_Test::assertBucketSpaceStats(size_t expBucketPending, uint16_t node, const vespalib::string &bucketSpace,
-                                         const BucketSpacesStatsProvider::PerNodeBucketSpacesStats &stats)
-{
-    auto nodeItr = stats.find(node);
-    CPPUNIT_ASSERT(nodeItr != stats.end());
-    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(1), nodeItr->second.size());
-    auto bucketSpaceItr = nodeItr->second.find(bucketSpace);
-    CPPUNIT_ASSERT(bucketSpaceItr != nodeItr->second.end());
-    CPPUNIT_ASSERT(bucketSpaceItr->second.valid());
-    CPPUNIT_ASSERT_EQUAL(static_cast<size_t>(0), bucketSpaceItr->second.bucketsTotal());
-    CPPUNIT_ASSERT_EQUAL(expBucketPending, bucketSpaceItr->second.bucketsPending());
 }
 
 /**
@@ -686,12 +651,12 @@ Distributor_Test::statsGeneratedForPreemptedOperations()
     {
         NodeMaintenanceStats wanted;
         wanted.syncing = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(0, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(0));
     }
     {
         NodeMaintenanceStats wanted;
         wanted.syncing = 1;
-        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(1, makeBucketSpace()));
+        CPPUNIT_ASSERT_EQUAL(wanted, stats.perNodeStats.forNode(1));
     }
 }
 
@@ -787,23 +752,19 @@ void Distributor_Test::sendDownClusterStateCommand() {
 }
 
 void Distributor_Test::replyToSingleRequestBucketInfoCommandWith1Bucket() {
-    CPPUNIT_ASSERT_EQUAL(_bucketSpaces.size(), _sender.commands.size());
-    for (uint32_t i = 0; i < _sender.commands.size(); ++i) {
-        CPPUNIT_ASSERT_EQUAL(api::MessageType::REQUESTBUCKETINFO,
-                             _sender.commands[i]->getType());
-        auto& bucketReq(static_cast<api::RequestBucketInfoCommand&>
-                        (*_sender.commands[i]));
-        auto bucketReply = bucketReq.makeReply();
-        if (bucketReq.getBucketSpace() == FixedBucketSpaces::default_space()) {
-            // Make sure we have a bucket to route our remove op to, or we'd get
-            // an immediate reply anyway.
-            dynamic_cast<api::RequestBucketInfoReply&>(*bucketReply)
-                .getBucketInfo().push_back(
-                        api::RequestBucketInfoReply::Entry(document::BucketId(1, 1),
-                                                           api::BucketInfo(20, 10, 12, 50, 60, true, true)));
-        }
-        _distributor->handleMessage(std::move(bucketReply));
-    }
+    CPPUNIT_ASSERT_EQUAL(size_t(1), _sender.commands.size());
+    CPPUNIT_ASSERT_EQUAL(api::MessageType::REQUESTBUCKETINFO,
+                         _sender.commands[0]->getType());
+    auto& bucketReq(static_cast<api::RequestBucketInfoCommand&>(
+            *_sender.commands[0]));
+    auto bucketReply = bucketReq.makeReply();
+    // Make sure we have a bucket to route our remove op to, or we'd get
+    // an immediate reply anyway.
+    dynamic_cast<api::RequestBucketInfoReply&>(*bucketReply)
+        .getBucketInfo().push_back(
+            api::RequestBucketInfoReply::Entry(document::BucketId(1, 1),
+                api::BucketInfo(20, 10, 12, 50, 60, true, true)));
+    _distributor->handleMessage(std::move(bucketReply));
     _sender.commands.clear();
 }
 

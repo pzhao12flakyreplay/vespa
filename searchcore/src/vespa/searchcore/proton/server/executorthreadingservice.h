@@ -18,7 +18,7 @@ class ExecutorThreadingService : public searchcorespi::index::IThreadingService
 private:
     vespalib::ThreadStackExecutor _masterExecutor;
     vespalib::BlockingThreadStackExecutor _indexExecutor;
-    vespalib::BlockingThreadStackExecutor _summaryExecutor;
+    vespalib::ThreadStackExecutor _summaryExecutor;
     ExecutorThreadService _masterService;
     ExecutorThreadService _indexService;
     ExecutorThreadService _summaryService;
@@ -45,7 +45,9 @@ public:
 
     void shutdown();
 
-    void setTaskLimit(uint32_t taskLimit, uint32_t summaryTaskLimit);
+    void setTaskLimit(uint32_t taskLimit);
+
+    void setUnboundTaskLimit();
 
     // Expose the underlying executors for stats fetching and testing.
     vespalib::ThreadStackExecutorBase &getMasterExecutor() {

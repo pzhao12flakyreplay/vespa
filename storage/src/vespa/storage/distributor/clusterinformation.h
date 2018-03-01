@@ -10,7 +10,8 @@ namespace storage {
 
 namespace lib {
 
-class ClusterStateBundle;
+class Distribution;
+class ClusterState;
 
 }
 
@@ -25,7 +26,7 @@ public:
 
     virtual uint16_t getDistributorIndex() const = 0;
 
-    virtual const lib::ClusterStateBundle& getClusterStateBundle() const = 0;
+    virtual const lib::ClusterState& getClusterState() const = 0;
 
     virtual const char* getStorageUpStates() const = 0;
 

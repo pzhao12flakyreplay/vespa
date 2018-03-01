@@ -2,20 +2,21 @@
 package com.yahoo.vespa.hosted.controller;
 
 import com.yahoo.config.provision.TenantName;
-import com.yahoo.vespa.athenz.api.AthenzDomain;
-import com.yahoo.vespa.athenz.api.AthenzUser;
-import com.yahoo.vespa.athenz.api.NToken;
 import com.yahoo.vespa.curator.Lock;
 import com.yahoo.vespa.hosted.controller.api.Tenant;
 import com.yahoo.vespa.hosted.controller.api.identifiers.ApplicationId;
+import com.yahoo.vespa.athenz.api.AthenzDomain;
 import com.yahoo.vespa.hosted.controller.api.identifiers.Property;
 import com.yahoo.vespa.hosted.controller.api.identifiers.PropertyId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.TenantId;
 import com.yahoo.vespa.hosted.controller.api.identifiers.UserGroup;
 import com.yahoo.vespa.hosted.controller.api.identifiers.UserId;
-import com.yahoo.vespa.hosted.controller.api.integration.athenz.AthenzClientFactory;
-import com.yahoo.vespa.hosted.controller.api.integration.athenz.ZmsClient;
 import com.yahoo.vespa.hosted.controller.api.integration.entity.EntityService;
+import com.yahoo.vespa.hosted.controller.api.integration.athenz.AthenzClientFactory;
+import com.yahoo.vespa.athenz.api.AthenzUser;
+import com.yahoo.vespa.athenz.api.NToken;
+import com.yahoo.vespa.hosted.controller.api.integration.athenz.ZmsClient;
+import com.yahoo.vespa.hosted.controller.api.integration.athenz.ZmsException;
 import com.yahoo.vespa.hosted.controller.persistence.ControllerDb;
 import com.yahoo.vespa.hosted.controller.persistence.CuratorDb;
 import com.yahoo.vespa.hosted.controller.persistence.PersistenceException;
@@ -109,8 +110,9 @@ public class TenantController {
             if (existingTenantWithDomain.isPresent())
                 throw new IllegalArgumentException("Could not create " + tenant + ": The Athens domain '" + domain.getName() +
                                                    "' is already connected to " + existingTenantWithDomain.get());
-            athenzClientFactory.createZmsClientWithAuthorizedServiceToken(token.get())
-                    .createTenant(domain);
+            ZmsClient zmsClient = athenzClientFactory.createZmsClientWithAuthorizedServiceToken(token.get());
+            try { zmsClient.deleteTenant(domain); } catch (ZmsException ignored) { }
+            zmsClient.createTenant(domain);
         }
         db.createTenant(tenant);
         log.info("Created " + tenant);

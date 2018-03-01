@@ -21,7 +21,7 @@ private:
     BucketSpaceMap _map;
 
 public:
-    DistributorBucketSpaceRepo();
+    explicit DistributorBucketSpaceRepo(bool enableGlobalBucketSpace);
     ~DistributorBucketSpaceRepo();
 
     DistributorBucketSpaceRepo(const DistributorBucketSpaceRepo&&) = delete;

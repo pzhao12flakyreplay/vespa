@@ -15,10 +15,10 @@ import com.yahoo.vespa.indexinglanguage.expressions.StatementExpression;
 import com.yahoo.vespa.model.container.search.QueryProfiles;
 
 /**
- * This processor modifies all indexing scripts so that they input the value of the owning field by default. It also
- * ensures that all fields used as input exist.
+ * <p>This processor modifies all indexing scripts so that they input the value of the owning field by default. It also
+ * ensures that all fields used as input exist.</p>
  *
- * @author Simon Thoresen
+ * @author <a href="mailto:simon@yahoo-inc.com">Simon Thoresen</a>
  */
 public class IndexingInputs extends Processor {
 
@@ -27,17 +27,16 @@ public class IndexingInputs extends Processor {
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             ScriptExpression script = field.getIndexingScript();
-            if (script == null) continue;
-
+            if (script == null) {
+                continue;
+            }
             String fieldName = field.getName();
             script = (ScriptExpression)new DefaultToCurrentField(fieldName).convert(script);
             script = (ScriptExpression)new EnsureInputExpression(fieldName).convert(script);
-            if (validate)
-                new VerifyInputExpression(search, field).visit(script);
-
+            new VerifyInputExpression(search, field).visit(script);
             field.setIndexingScript(script);
         }
     }
@@ -96,14 +95,16 @@ public class IndexingInputs extends Processor {
 
         @Override
         protected void doVisit(Expression exp) {
-            if ( ! (exp instanceof InputExpression)) return;
-
+            if (!(exp instanceof InputExpression)) {
+                return;
+            }
             SDDocumentType docType = search.getDocument();
             String inputField = ((InputExpression)exp).getFieldName();
-            if (docType.getField(inputField) != null) return;
-
+            if (docType.getField(inputField) != null) {
+                return;
+            }
             fail(search, field, "Indexing script refers to field '" + inputField + "' which does not exist " +
-                                "in document type '" + docType.getName() + "'.");
+                                          "in document type '" + docType.getName() + "'.");
         }
     }
 }

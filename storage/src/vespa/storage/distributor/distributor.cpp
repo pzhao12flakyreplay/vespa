@@ -63,10 +63,9 @@ Distributor::Distributor(DistributorComponentRegister& compReg,
     : StorageLink("distributor"),
       DistributorInterface(),
       framework::StatusReporter("distributor", "Distributor"),
-      _clusterStateBundle(lib::ClusterState()),
       _compReg(compReg),
       _component(compReg, "distributor"),
-      _bucketSpaceRepo(std::make_unique<DistributorBucketSpaceRepo>()),
+      _bucketSpaceRepo(std::make_unique<DistributorBucketSpaceRepo>(_component.enableMultipleBucketSpaces())),
       _metrics(new DistributorMetricSet(_component.getLoadTypes()->getMetricLoadTypes())),
       _operationOwner(*this, _component.getClock()),
       _maintenanceOperationOwner(*this, _component.getClock()),
@@ -94,9 +93,8 @@ Distributor::Distributor(DistributorComponentRegister& compReg,
       _metricUpdateHook(*this),
       _metricLock(),
       _maintenanceStats(),
-      _bucketSpacesStats(),
       _bucketDbStats(),
-      _hostInfoReporter(_pendingMessageTracker.getLatencyStatisticsProvider(), *this, *this),
+      _hostInfoReporter(_pendingMessageTracker.getLatencyStatisticsProvider(), *this),
       _ownershipSafeTimeCalc(
             std::make_unique<OwnershipTransferSafeTimePointCalculator>(
                 std::chrono::seconds(0))) // Set by config later
@@ -108,7 +106,6 @@ Distributor::Distributor(DistributorComponentRegister& compReg,
     _bucketDBStatusDelegate.registerStatusPage();
     hostInfoReporterRegistrar.registerReporter(&_hostInfoReporter);
     propagateDefaultDistribution(_component.getDistribution());
-    propagateClusterStates();
 };
 
 Distributor::~Distributor()
@@ -333,24 +330,16 @@ Distributor::handleMessage(const std::shared_ptr<api::StorageMessage>& msg)
     return false;
 }
 
-const lib::ClusterStateBundle&
-Distributor::getClusterStateBundle() const
-{
-    return _clusterStateBundle;
-}
-
 void
-Distributor::enableClusterStateBundle(const lib::ClusterStateBundle& state)
+Distributor::enableClusterState(const lib::ClusterState& state)
 {
-    lib::ClusterStateBundle oldState = _clusterStateBundle;
-    _clusterStateBundle = state;
-    propagateClusterStates();
+    lib::ClusterState oldState = _clusterState;
+    _clusterState = state;
 
     lib::Node myNode(lib::NodeType::DISTRIBUTOR, _component.getIndex());
-    const auto &baselineState = *_clusterStateBundle.getBaselineClusterState();
 
     if (!_doneInitializing &&
-        baselineState.getNodeState(myNode).getState() == lib::State::UP)
+        getClusterState().getNodeState(myNode).getState() == lib::State::UP)
     {
         scanAllBuckets();
         _doneInitializing = true;
@@ -360,8 +349,8 @@ Distributor::enableClusterStateBundle(const lib::ClusterStateBundle& state)
     }
 
     // Clear all active messages on nodes that are down.
-    for (uint16_t i = 0; i < baselineState.getNodeCount(lib::NodeType::STORAGE); ++i) {
-        if (!baselineState.getNodeState(lib::Node(lib::NodeType::STORAGE, i)).getState()
+    for (uint16_t i = 0; i < state.getNodeCount(lib::NodeType::STORAGE); ++i) {
+        if (!state.getNodeState(lib::Node(lib::NodeType::STORAGE, i)).getState()
                 .oneOf(getStorageNodeUpStates()))
         {
             std::vector<uint64_t> msgIds(
@@ -538,15 +527,9 @@ Distributor::propagateDefaultDistribution(
         std::shared_ptr<const lib::Distribution> distribution)
 {
     _bucketSpaceRepo->get(document::FixedBucketSpaces::default_space()).setDistribution(distribution);
-    auto global_distr = GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
-    _bucketSpaceRepo->get(document::FixedBucketSpaces::global_space()).setDistribution(std::move(global_distr));
-}
-
-void
-Distributor::propagateClusterStates()
-{
-    for (auto &iter : *_bucketSpaceRepo) {
-        iter.second->setClusterState(_clusterStateBundle.getDerivedClusterState(iter.first));
+    if (_component.enableMultipleBucketSpaces()) {
+        auto global_distr = GlobalBucketSpaceDistributionConverter::convert_to_global(*distribution);
+        _bucketSpaceRepo->get(document::FixedBucketSpaces::global_space()).setDistribution(std::move(global_distr));
     }
 }
 
@@ -629,13 +612,6 @@ Distributor::getMinReplica() const
     return _bucketDbStats._minBucketReplica;
 }
 
-BucketSpacesStatsProvider::PerNodeBucketSpacesStats
-Distributor::getBucketSpacesStats() const
-{
-    vespalib::LockGuard guard(_metricLock);
-    return _bucketSpacesStats;
-}
-
 void
 Distributor::propagateInternalScanMetricsToExternal()
 {
@@ -650,29 +626,6 @@ Distributor::propagateInternalScanMetricsToExternal()
     }
 }
 
-namespace {
-
-BucketSpaceStats
-toBucketSpaceStats(const NodeMaintenanceStats &stats)
-{
-    return BucketSpaceStats(0, stats.syncing + stats.copyingIn);
-}
-
-BucketSpacesStatsProvider::PerNodeBucketSpacesStats
-toBucketSpacesStats(const NodeMaintenanceStatsTracker &maintenanceStats)
-{
-    BucketSpacesStatsProvider::PerNodeBucketSpacesStats result;
-    for (const auto &nodeEntry : maintenanceStats.perNodeStats()) {
-        for (const auto &bucketSpaceEntry : nodeEntry.second) {
-            auto bucketSpace = document::FixedBucketSpaces::to_string(bucketSpaceEntry.first);
-            result[nodeEntry.first][bucketSpace] = toBucketSpaceStats(bucketSpaceEntry.second);
-        }
-    }
-    return result;
-}
-
-}
-
 void
 Distributor::updateInternalMetricsForCompletedScan()
 {
@@ -681,7 +634,7 @@ Distributor::updateInternalMetricsForCompletedScan()
     _bucketDBMetricUpdater.completeRound();
     _bucketDbStats = _bucketDBMetricUpdater.getLastCompleteStats();
     _maintenanceStats = _scanner->getPendingMaintenanceStats();
-    _bucketSpacesStats = toBucketSpacesStats(_maintenanceStats.perNodeStats);
+
 }
 
 void

@@ -2,8 +2,7 @@
 package com.yahoo.vespa.clustercontroller.standalone;
 
 import com.yahoo.vdslib.distribution.Distribution;
-import org.junit.After;
-import org.junit.Before;
+import junit.framework.TestCase;
 
 import java.io.File;
 import java.io.FileWriter;
@@ -11,8 +10,7 @@ import java.io.IOException;
 import java.util.Map;
 import java.util.TreeMap;
 
-public abstract class ClusterControllerTest {
-
+public abstract class ClusterControllerTest extends TestCase {
     private final Map<String, String> overriddenProperties = new TreeMap<>();
     private File tempDirectory;
 
@@ -30,12 +28,12 @@ public abstract class ClusterControllerTest {
         return f;
     }
 
-    @Before
+    @Override
     public void setUp() throws Exception {
         tempDirectory = createTemporaryDirectory();
     }
 
-    @After
+    @Override
     public void tearDown() {
         for (Map.Entry<String, String> e : overriddenProperties.entrySet()) {
             if (e.getValue() == null) {
@@ -95,5 +93,4 @@ public abstract class ClusterControllerTest {
         addDistributionConfig();
         addZookeepersConfig();
     }
-
 }

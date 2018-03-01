@@ -246,14 +246,15 @@ public class VespaModelTestCase {
                 .withHosts(simpleHosts)
                 .withServices(services)
                 .build();
-        DeployState deployState = builder.deployLogger(logger).applicationPackage(app).build(true);
+        DeployState deployState = builder.deployLogger(logger).applicationPackage(app).build();
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
         Validation.validate(model, true, deployState);
+        System.out.println(logger.msgs);
         assertFalse(logger.msgs.isEmpty());
     }
 
     @Test
-    public void testNoAdmin() {
+    public void testNoAdmin() throws IOException, SAXException {
         VespaModel model = CommonVespaModelSetup.createVespaModelWithMusic(
                 simpleHosts,
                 "<?xml version=\"1.0\" encoding=\"utf-8\" ?>" +
@@ -264,9 +265,9 @@ public class VespaModelTestCase {
         assertThat(admin.getConfigservers().size(), is(1));
         Set<HostInfo> hosts = model.getHosts();
         assertThat(hosts.size(), is(1));
-        //logd, config proxy, sentinel, config server, slobrok, log server
+        //logd, config proxy, sentinel, config server, slobrok, log server, file distributor
         HostInfo host = hosts.iterator().next();
-        assertThat(host.getServices().size(), is(6));
+        assertThat(host.getServices().size(), is(7));
         new LogdConfig((LogdConfig.Builder) model.getConfig(new LogdConfig.Builder(), "admin/model"));
 
     }
@@ -283,7 +284,7 @@ public class VespaModelTestCase {
                         .configServerSpecs(Arrays.asList(new Configserver.Spec("cfghost", 1234, 1235, 1236)))
                         .multitenant(true)
                         .build())
-                .build(true);
+                .build();
         VespaModel model = new VespaModel(new NullConfigModelRegistry(), deployState);
         AllocatedHosts info = model.allocatedHosts();
         assertEquals("Admin version 3 is ignored, and there are no other hosts to borrow for admin services", 0, info.getHosts().size());
@@ -302,9 +303,9 @@ public class VespaModelTestCase {
     public void testPermanentServices() throws IOException, SAXException {
         ApplicationPackage app = MockApplicationPackage.createEmpty();
         DeployState.Builder builder = new DeployState.Builder().applicationPackage(app);
-        VespaModel model = new VespaModel(new NullConfigModelRegistry(), builder.build(true));
+        VespaModel model = new VespaModel(new NullConfigModelRegistry(), builder.build());
         assertThat(model.getContainerClusters().size(), is(0));
-        model = new VespaModel(new NullConfigModelRegistry(), builder.permanentApplicationPackage(Optional.of(FilesApplicationPackage.fromFile(new File(TESTDIR, "app_permanent")))).build(true));
+        model = new VespaModel(new NullConfigModelRegistry(), builder.permanentApplicationPackage(Optional.of(FilesApplicationPackage.fromFile(new File(TESTDIR, "app_permanent")))).build());
         assertThat(model.getContainerClusters().size(), is(1));
     }
 

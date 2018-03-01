@@ -31,7 +31,6 @@ public class BucketStatsRetrieverTest {
     private DocumentAccessFactory mockedFactory;
     private MessageBusDocumentAccess mockedDocumentAccess;
     private MessageBusSyncSession mockedSession;
-    private final String bucketSpace = "default";
 
 
     @Before
@@ -68,7 +67,7 @@ public class BucketStatsRetrieverTest {
         reply.getBuckets().add(new GetBucketListReply.BucketInfo(bucketId, bucketInfo));
         when(mockedSession.syncSend(any())).thenReturn(reply);
 
-        List<GetBucketListReply.BucketInfo> bucketList = createRetriever().retrieveBucketList(bucketId, bucketSpace);
+        List<GetBucketListReply.BucketInfo> bucketList = createRetriever().retrieveBucketList(bucketId);
 
         verify(mockedSession, times(1)).syncSend(any());
         assertEquals(1, bucketList.size());
@@ -84,7 +83,7 @@ public class BucketStatsRetrieverTest {
         StatBucketReply reply = new StatBucketReply();
         reply.setResults(bucketInfo);
         when(mockedSession.syncSend(any())).thenReturn(reply);
-        String result = createRetriever().retrieveBucketStats(ClientParameters.SelectionType.DOCUMENT, docId, bucketId, bucketSpace);
+        String result = createRetriever().retrieveBucketStats(ClientParameters.SelectionType.DOCUMENT, docId, bucketId);
 
         verify(mockedSession, times(1)).syncSend(any());
         assertEquals(bucketInfo, result);
@@ -113,7 +112,7 @@ public class BucketStatsRetrieverTest {
         reply.addError(new Error(0, "errormsg"));
         when(mockedSession.syncSend(any())).thenReturn(reply);
 
-        createRetriever().retrieveBucketList(new BucketId(1), bucketSpace);
+        createRetriever().retrieveBucketList(new BucketId(1));
     }
 
     @Test
@@ -125,7 +124,7 @@ public class BucketStatsRetrieverTest {
         when(mockedSession.syncSend(any())).thenReturn(reply);
 
         BucketStatsRetriever retriever = new BucketStatsRetriever(mockedFactory, route, t -> {});
-        retriever.retrieveBucketList(new BucketId(0), bucketSpace);
+        retriever.retrieveBucketList(new BucketId(0));
 
         verify(mockedSession).syncSend(argThat(new ArgumentMatcher<Message>() {
             @Override

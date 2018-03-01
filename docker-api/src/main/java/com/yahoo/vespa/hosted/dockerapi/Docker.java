@@ -45,14 +45,12 @@ public interface Docker {
         Map<String, Object> getBlkioStats();
     }
 
-    default boolean networkNPTed() {
+    default boolean networkNATed() {
         return false;
     }
 
     Optional<ContainerStats> getContainerStats(ContainerName containerName);
-
-    void createContainer(CreateContainerCommand createContainerCommand);
-
+    
     void startContainer(ContainerName containerName);
 
     void stopContainer(ContainerName containerName);

@@ -23,7 +23,7 @@ import static org.junit.Assert.assertNull;
 /**
  * Check error logging from ContentChannelOutputStream is sane.
  *
- * @author Steinar Knutsen
+ * @author <a href="mailto:steinar@yahoo-inc.com">Steinar Knutsen</a>
  */
 public class LoggingTestCase {
 

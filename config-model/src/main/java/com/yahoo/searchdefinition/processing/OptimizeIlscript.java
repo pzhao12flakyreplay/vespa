@@ -13,26 +13,21 @@ import com.yahoo.vespa.model.container.search.QueryProfiles;
  * Run ExpressionOptimizer on all scripts, to get rid of expressions that have no effect.
  */
 public class OptimizeIlscript extends Processor {
-
-    public OptimizeIlscript(Search search,
-                            DeployLogger deployLogger,
-                            RankProfileRegistry rankProfileRegistry,
-                            QueryProfiles queryProfiles) {
+    public OptimizeIlscript(Search search, DeployLogger deployLogger, RankProfileRegistry rankProfileRegistry, QueryProfiles queryProfiles) {
         super(search, deployLogger, rankProfileRegistry, queryProfiles);
     }
 
     @Override
-    public void process(boolean validate) {
+    public void process() {
         for (SDField field : search.allConcreteFields()) {
             ScriptExpression script = field.getIndexingScript();
-            if (script == null) continue;
-
+            if (script == null) {
+                continue;
+            }
             field.setIndexingScript((ScriptExpression)new ExpressionOptimizer().convert(script));
-            if ( ! field.getIndexingScript().toString().equals(script.toString())) {
-                warn(search, field, "Rewrote ilscript from:\n" + script.toString() +
-                                    "\nto\n" + field.getIndexingScript().toString());
+            if (!field.getIndexingScript().toString().equals(script.toString())) {
+                warn(search, field, "Rewrote ilscript from:\n" + script.toString() + "\nto\n" + field.getIndexingScript().toString());
             }
         }
     }
-
 }

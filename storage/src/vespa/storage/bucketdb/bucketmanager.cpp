@@ -7,7 +7,6 @@
 #include <iomanip>
 #include <vespa/storage/common/content_bucket_space_repo.h>
 #include <vespa/storage/common/nodestateupdater.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/storage/storageutil/distributorstatecache.h>
 #include <vespa/storageframework/generic/status/htmlstatusreporter.h>
 #include <vespa/storageframework/generic/status/xmlstatusreporter.h>
@@ -518,9 +517,8 @@ BucketManager::processRequestBucketInfoCommands(document::BucketSpace bucketSpac
     std::map<uint16_t, RBISP> requests;
 
     auto distribution(_component.getBucketSpaceRepo().get(bucketSpace).getDistribution());
-    auto clusterStateBundle(_component.getStateUpdater().getClusterStateBundle());
-    assert(clusterStateBundle);
-    lib::ClusterState::CSP clusterState(clusterStateBundle->getDerivedClusterState(bucketSpace));
+    lib::ClusterState::CSP clusterState(
+            _component.getStateUpdater().getSystemState());
     assert(clusterState.get());
 
     DistributionHashNormalizer normalizer;

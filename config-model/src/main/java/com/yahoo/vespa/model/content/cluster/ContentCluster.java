@@ -602,7 +602,6 @@ public class ContentCluster extends AbstractConfigProducer implements StorDistri
             builder.min_distributor_up_ratio(0);
             builder.min_storage_up_ratio(0);
         }
-        builder.enable_multiple_bucket_spaces(enableMultipleBucketSpaces);
     }
 
     @Override

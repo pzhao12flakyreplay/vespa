@@ -32,8 +32,8 @@ PendingClusterState::PendingClusterState(
         api::Timestamp creationTimestamp)
     : _cmd(newStateCmd),
       _requestedNodes(newStateCmd->getSystemState().getNodeCount(lib::NodeType::STORAGE)),
-      _prevClusterStateBundle(clusterInfo->getClusterStateBundle()),
-      _newClusterStateBundle(newStateCmd->getClusterStateBundle()),
+      _prevClusterState(clusterInfo->getClusterState()),
+      _newClusterState(newStateCmd->getSystemState()),
       _clock(clock),
       _clusterInfo(clusterInfo),
       _creationTimestamp(creationTimestamp),
@@ -53,8 +53,8 @@ PendingClusterState::PendingClusterState(
         DistributorBucketSpaceRepo &bucketSpaceRepo,
         api::Timestamp creationTimestamp)
     : _requestedNodes(clusterInfo->getStorageNodeCount()),
-      _prevClusterStateBundle(clusterInfo->getClusterStateBundle()),
-      _newClusterStateBundle(clusterInfo->getClusterStateBundle()),
+      _prevClusterState(clusterInfo->getClusterState()),
+      _newClusterState(clusterInfo->getClusterState()),
       _clock(clock),
       _clusterInfo(clusterInfo),
       _creationTimestamp(creationTimestamp),
@@ -79,7 +79,7 @@ PendingClusterState::initializeBucketSpaceTransitions(bool distributionChanged, 
         auto pendingTransition =
             std::make_unique<PendingBucketSpaceDbTransition>
             (*this, *elem.second, distributionChanged, outdatedNodes,
-             _clusterInfo, *_newClusterStateBundle.getDerivedClusterState(elem.first), _creationTimestamp);
+             _clusterInfo, _newClusterState, _creationTimestamp);
         if (pendingTransition->getBucketOwnershipTransfer()) {
             _bucketOwnershipTransfer = true;
         }
@@ -99,15 +99,15 @@ PendingClusterState::logConstructionInformation() const
         "New PendingClusterState constructed with previous cluster "
         "state '%s', new cluster state '%s', distribution config "
         "hash: '%s'",
-        getPrevClusterStateBundleString().c_str(),
-        getNewClusterStateBundleString().c_str(),
+        _prevClusterState.toString().c_str(),
+        _newClusterState.toString().c_str(),
         distribution.getNodeGraph().getDistributionConfigHash().c_str());
 }
 
 bool
-PendingClusterState::storageNodeUpInNewState(document::BucketSpace bucketSpace, uint16_t node) const
+PendingClusterState::storageNodeUpInNewState(uint16_t node) const
 {
-    return _newClusterStateBundle.getDerivedClusterState(bucketSpace)->getNodeState(Node(NodeType::STORAGE, node))
+    return _newClusterState.getNodeState(Node(NodeType::STORAGE, node))
                .getState().oneOf(_clusterInfo->getStorageUpStates());
 }
 
@@ -124,7 +124,7 @@ PendingClusterState::getOutdatedNodesMap() const
 uint16_t
 PendingClusterState::newStateStorageNodeCount() const
 {
-    return _newClusterStateBundle.getBaselineClusterState()->getNodeCount(lib::NodeType::STORAGE);
+    return _newClusterState.getNodeCount(lib::NodeType::STORAGE);
 }
 
 bool
@@ -144,15 +144,15 @@ PendingClusterState::shouldRequestBucketInfo() const
 bool
 PendingClusterState::clusterIsDown() const
 {
-    return _newClusterStateBundle.getBaselineClusterState()->getClusterState() == lib::State::DOWN;
+    return _newClusterState.getClusterState() == lib::State::DOWN;
 }
 
 bool
 PendingClusterState::iAmDown() const
 {
     const lib::NodeState& myState(
-            _newClusterStateBundle.getBaselineClusterState()->getNodeState(Node(NodeType::DISTRIBUTOR,
-                    _sender.getDistributorIndex())));
+            _newClusterState.getNodeState(Node(NodeType::DISTRIBUTOR,
+                                               _sender.getDistributorIndex())));
     return myState.getState() == lib::State::DOWN;
 }
 
@@ -161,8 +161,8 @@ PendingClusterState::requestNodes()
 {
     LOG(debug,
         "New system state: Old state was %s, new state is %s",
-        getPrevClusterStateBundleString().c_str(),
-        getNewClusterStateBundleString().c_str());
+        _prevClusterState.toString().c_str(),
+        _newClusterState.toString().c_str());
 
     requestBucketInfoFromStorageNodesWithChangedState();
 }
@@ -173,7 +173,7 @@ PendingClusterState::requestBucketInfoFromStorageNodesWithChangedState()
     for (auto &elem : _pendingTransitions) {
         const OutdatedNodes &outdatedNodes(elem.second->getOutdatedNodes());
         for (uint16_t idx : outdatedNodes) {
-            if (storageNodeUpInNewState(elem.first, idx)) {
+            if (storageNodeUpInNewState(idx)) {
                 requestNode(BucketSpaceAndNode(elem.first, idx));
             }
         }
@@ -191,14 +191,14 @@ PendingClusterState::requestNode(BucketSpaceAndNode bucketSpaceAndNode)
         "and distribution hash '%s'",
         bucketSpaceAndNode.bucketSpace.getId(),
         bucketSpaceAndNode.node,
-        getNewClusterStateBundleString().c_str(),
+        _newClusterState.toString().c_str(),
         distributionHash.c_str());
 
     std::shared_ptr<api::RequestBucketInfoCommand> cmd(
             new api::RequestBucketInfoCommand(
                     bucketSpaceAndNode.bucketSpace,
                     _sender.getDistributorIndex(),
-                    *_newClusterStateBundle.getDerivedClusterState(bucketSpaceAndNode.bucketSpace),
+                    _newClusterState,
                     distributionHash));
 
     cmd->setPriority(api::StorageMessage::HIGH);
@@ -232,12 +232,7 @@ PendingClusterState::onRequestBucketInfoReply(const std::shared_ptr<api::Request
     }
     const BucketSpaceAndNode bucketSpaceAndNode = iter->second;
 
-    api::ReturnCode result(reply->getResult());
-    if (result == api::ReturnCode::Result::ENCODE_ERROR) {
-        // Handle failure to encode bucket space due to use of old storage api
-        // protocol.  Pretend that request succeeded with no buckets returned.
-        LOG(debug, "Got ENCODE_ERROR, pretending success with no buckets");
-    } else if (!result.success()) {
+    if (!reply->getResult().success()) {
         framework::MilliSecTime resendTime(_clock);
         resendTime += framework::MilliSecTime(100);
         _delayedRequests.emplace_back(resendTime, bucketSpaceAndNode);
@@ -294,7 +289,7 @@ PendingClusterState::printXml(vespalib::XmlOutputStream& xos) const
 {
     using namespace vespalib::xml;
     xos << XmlTag("systemstate_pending")
-        << XmlAttribute("state", *_newClusterStateBundle.getBaselineClusterState());
+        << XmlAttribute("state", _newClusterState);
     for (auto &elem : _sentMessages) {
         xos << XmlTag("pending")
             << XmlAttribute("node", elem.second.node)
@@ -306,8 +301,8 @@ PendingClusterState::printXml(vespalib::XmlOutputStream& xos) const
 PendingClusterState::Summary
 PendingClusterState::getSummary() const
 {
-    return Summary(getPrevClusterStateBundleString(),
-                   getNewClusterStateBundleString(),
+    return Summary(_prevClusterState.toString(),
+                   _newClusterState.toString(),
                    (_clock.getTimeInMicros().getTime() - _creationTimestamp));
 }
 

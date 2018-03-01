@@ -43,7 +43,7 @@ public class MockNodeRepository extends NodeRepository {
      * Constructor
      * @param flavors flavors to have in node repo
      */
-    public MockNodeRepository(MockCurator curator, NodeFlavors flavors) {
+    public MockNodeRepository(MockCurator curator, NodeFlavors flavors) throws Exception {
         super(flavors, curator, Clock.fixed(Instant.ofEpochMilli(123), ZoneId.of("Z")), Zone.defaultZone(),
               new MockNameResolver()
                       .addRecord("test-container-1", "::2")
@@ -53,6 +53,11 @@ public class MockNodeRepository extends NodeRepository {
 
         curator.setZooKeeperEnsembleConnectionSpec("cfg1:1234,cfg2:1234,cfg3:1234");
         populate();
+    }
+
+    @Override
+    public boolean dynamicAllocationEnabled() {
+        return true;
     }
 
     private void populate() {
@@ -103,11 +108,11 @@ public class MockNodeRepository extends NodeRepository {
         nodes = addNodes(nodes);
         nodes.remove(6);
         nodes.remove(7);
-        nodes = setDirty(nodes, Agent.system, getClass().getSimpleName());
-        setReady(nodes, Agent.system, getClass().getSimpleName());
+        nodes = setDirty(nodes);
+        setReady(nodes);
 
-        fail("host5.yahoo.com", Agent.system, getClass().getSimpleName());
-        setDirty("host55.yahoo.com", Agent.system, getClass().getSimpleName());
+        fail("host5.yahoo.com", Agent.system, "Failing to unit test");
+        setDirty("host55.yahoo.com");
 
         ApplicationId zoneApp = ApplicationId.from(TenantName.from("zoneapp"), ApplicationName.from("zoneapp"), InstanceName.from("zoneapp"));
         ClusterSpec zoneCluster = ClusterSpec.request(ClusterSpec.Type.container,

@@ -26,7 +26,7 @@ public class TensorValue extends Value {
     }
 
     @Override
-    public TensorType type() { return value.type(); }
+    public TensorType type() { return TensorType.empty; }
 
     @Override
     public double asDouble() {

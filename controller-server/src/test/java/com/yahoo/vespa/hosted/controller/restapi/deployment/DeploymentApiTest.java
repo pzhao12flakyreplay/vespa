@@ -2,14 +2,14 @@
 package com.yahoo.vespa.hosted.controller.restapi.deployment;
 
 import com.google.common.collect.ImmutableSet;
+import com.yahoo.application.container.handler.Request;
 import com.yahoo.component.Version;
 import com.yahoo.config.provision.Environment;
 import com.yahoo.config.provision.RegionName;
+import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.vespa.hosted.controller.Application;
 import com.yahoo.vespa.hosted.controller.Controller;
-import com.yahoo.vespa.hosted.controller.api.integration.zone.ZoneId;
 import com.yahoo.vespa.hosted.controller.application.ApplicationPackage;
-import com.yahoo.vespa.hosted.controller.application.DeploymentJobs;
 import com.yahoo.vespa.hosted.controller.deployment.ApplicationPackageBuilder;
 import com.yahoo.vespa.hosted.controller.restapi.ContainerControllerTester;
 import com.yahoo.vespa.hosted.controller.restapi.ControllerContainerTest;
@@ -22,6 +22,11 @@ import java.io.File;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.component;
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.productionCorpUsEast1;
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.stagingTest;
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType.systemTest;
 
 /**
  * @author bratseth
@@ -74,7 +79,8 @@ public class DeploymentApiTest extends ControllerContainerTest {
 
         tester.controller().updateVersionStatus(censorConfigServers(VersionStatus.compute(tester.controller()),
                                                                     tester.controller()));
-        tester.assertResponse(authenticatedRequest("http://localhost:8080/deployment/v1/"), new File("root.json"));
+        tester.assertResponse(new Request("http://localhost:8080/deployment/v1/"),
+                              new File("root.json"));
     }
 
     private VersionStatus censorConfigServers(VersionStatus versionStatus, Controller controller) {
@@ -83,7 +89,7 @@ public class DeploymentApiTest extends ControllerContainerTest {
             if ( ! version.configServerHostnames().isEmpty())
                 version = new VespaVersion(version.statistics(), 
                                            version.releaseCommit(), 
-                                           version.committedAt(),
+                                           version.releasedAt(), 
                                            version.isCurrentSystemVersion(), 
                                            ImmutableSet.of("config1.test", "config2.test"),
                                            VespaVersion.confidenceFrom(version.statistics(), controller)
@@ -95,31 +101,17 @@ public class DeploymentApiTest extends ControllerContainerTest {
 
     private void deployCompletely(Application application, ApplicationPackage applicationPackage, long projectId,
                                   boolean success) {
-        tester.jobCompletion(DeploymentJobs.JobType.component)
-              .application(application)
-              .projectId(projectId)
-              .uploadArtifact(applicationPackage)
-              .submit();
+        tester.notifyJobCompletion(application.id(), projectId, true, component);
         tester.deploy(application, applicationPackage, ZoneId.from(Environment.test, RegionName.from("us-east-1")),
                       projectId);
-        tester.jobCompletion(DeploymentJobs.JobType.systemTest)
-              .application(application)
-              .projectId(projectId)
-              .submit();
+        tester.notifyJobCompletion(application.id(), projectId, true, systemTest);
         tester.deploy(application, applicationPackage, ZoneId.from(Environment.staging, RegionName.from("us-east-3")),
                       projectId);
-        tester.jobCompletion(DeploymentJobs.JobType.stagingTest)
-              .application(application)
-              .projectId(projectId)
-              .success(success)
-              .submit();
+        tester.notifyJobCompletion(application.id(), projectId, success, stagingTest);
         if (success) {
             tester.deploy(application, applicationPackage, ZoneId.from(Environment.prod,
                                                                        RegionName.from("corp-us-east-1")), projectId);
-            tester.jobCompletion(DeploymentJobs.JobType.productionCorpUsEast1)
-                  .application(application)
-                  .projectId(projectId)
-                  .submit();
+            tester.notifyJobCompletion(application.id(), projectId, true, productionCorpUsEast1);
         }
     }
 

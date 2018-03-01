@@ -122,7 +122,7 @@ public final class VespaModel extends AbstractConfigProducerRoot implements Seri
      *        to instantiate config models
      */
     public VespaModel(ApplicationPackage app, ConfigModelRegistry configModelRegistry) throws IOException, SAXException {
-        this(configModelRegistry, new DeployState.Builder().applicationPackage(app).build(true));
+        this(configModelRegistry, new DeployState.Builder().applicationPackage(app).build());
     }
 
     /**
@@ -409,6 +409,11 @@ public final class VespaModel extends AbstractConfigProducerRoot implements Seri
     @Override
     public void distributeFiles(FileDistribution fileDistribution) {
         getFileDistributor().sendDeployedFiles(fileDistribution);
+    }
+
+    @Override
+    public void reloadDeployFileDistributor(FileDistribution fileDistribution) {
+        getFileDistributor().reloadDeployFileDistributor(fileDistribution);
     }
 
     @Override

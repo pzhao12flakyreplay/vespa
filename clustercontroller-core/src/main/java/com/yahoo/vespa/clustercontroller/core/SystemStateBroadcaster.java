@@ -18,7 +18,7 @@ public class SystemStateBroadcaster {
 
     private final Timer timer;
     private final Object monitor;
-    private ClusterStateBundle clusterStateBundle;
+    private ClusterState systemState;
     private final List<SetClusterStateRequest> replies = new LinkedList<>();
 
     private final static long minTimeBetweenNodeErrorLogging = 10 * 60 * 1000;
@@ -32,12 +32,12 @@ public class SystemStateBroadcaster {
         this.monitor = monitor;
     }
 
-    public void handleNewClusterStates(ClusterStateBundle state) {
-        clusterStateBundle = state;
+    public void handleNewSystemState(ClusterState state) {
+        systemState = state;
     }
 
     public ClusterState getClusterState() {
-        return clusterStateBundle.getBaselineClusterState();
+        return systemState;
     }
 
     private void reportNodeError(boolean nodeOk, NodeInfo info, String message) {
@@ -59,8 +59,8 @@ public class SystemStateBroadcaster {
                 int version = req.getSystemStateVersion();
 
                 if (req.getReply().isError()) {
-                    info.setSystemStateVersionAcknowledged(version, false);
                     if (req.getReply().getReturnCode() != Communicator.TRANSIENT_ERROR) {
+                        info.setSystemStateVersionAcknowledged(version, false);
                         if (info.getNewestSystemStateVersionSent() == version) {
                             reportNodeError(nodeOk, info,
                                     "Got error response " + req.getReply().getReturnCode() + ": " + req.getReply().getReturnMessage()
@@ -79,7 +79,7 @@ public class SystemStateBroadcaster {
     }
 
     private boolean nodeNeedsClusterState(NodeInfo node) {
-        if (node.getSystemStateVersionAcknowledged() == clusterStateBundle.getVersion()) {
+        if (node.getSystemStateVersionAcknowledged() == systemState.getVersion()) {
             return false; // No point in sending if node already has updated system state
         }
         if (node.getRpcAddress() == null || node.isRpcAddressOutdated()) {
@@ -102,7 +102,7 @@ public class SystemStateBroadcaster {
     }
 
     private boolean newestStateAlreadySentToNode(NodeInfo node) {
-        return (node.getNewestSystemStateVersionSent() == clusterStateBundle.getVersion());
+        return (node.getNewestSystemStateVersionSent() == systemState.getVersion());
     }
 
     /**
@@ -113,45 +113,42 @@ public class SystemStateBroadcaster {
     void checkIfClusterStateIsAckedByAllDistributors(DatabaseHandler database,
                                                         DatabaseHandler.Context dbContext,
                                                         FleetController fleetController) throws InterruptedException {
-        final int currentStateVersion = clusterStateBundle.getVersion();
-        if ((clusterStateBundle == null) || (lastClusterStateInSync == currentStateVersion)) {
+        if ((systemState == null) || (lastClusterStateInSync == systemState.getVersion())) {
             return; // Nothing to do for the current state
         }
         boolean anyOutdatedDistributorNodes = dbContext.getCluster().getNodeInfo().stream()
                 .filter(NodeInfo::isDistributor)
                 .anyMatch(this::nodeNeedsClusterState);
 
-        if (!anyOutdatedDistributorNodes && (currentStateVersion > lastClusterStateInSync)) {
+        if (!anyOutdatedDistributorNodes && (systemState.getVersion() > lastClusterStateInSync)) {
             log.log(LogLevel.DEBUG, "All distributors have newest clusterstate, updating start timestamps in zookeeper and clearing them from cluster state");
-            lastClusterStateInSync = currentStateVersion;
+            lastClusterStateInSync = systemState.getVersion();
             fleetController.handleAllDistributorsInSync(database, dbContext);
         }
     }
 
-    public boolean broadcastNewState(DatabaseHandler.Context dbContext, Communicator communicator) {
-        if (clusterStateBundle == null) {
-            return false;
-        }
+    public boolean broadcastNewState(DatabaseHandler database,
+                                     DatabaseHandler.Context dbContext,
+                                     Communicator communicator,
+                                     FleetController fleetController) throws InterruptedException {
+        if (systemState == null) return false;
 
-        ClusterState baselineState = clusterStateBundle.getBaselineClusterState();
-
-        if (!baselineState.isOfficial()) {
-            log.log(LogLevel.INFO, String.format("Publishing cluster state version %d", baselineState.getVersion()));
-            baselineState.setOfficial(true);
+        if (!systemState.isOfficial()) {
+            log.log(LogLevel.INFO, String.format("Publishing cluster state version %d", systemState.getVersion()));
+            systemState.setOfficial(true);
         }
 
         List<NodeInfo> recipients = resolveStateVersionSendSet(dbContext);
         for (NodeInfo node : recipients) {
             if (nodeNeedsToObserveStartupTimestamps(node)) {
-                // TODO this is the same for all nodes, compute only once
-                ClusterStateBundle modifiedBundle = clusterStateBundle.cloneWithMapper(state -> buildModifiedClusterState(state, dbContext));
-                log.log(LogLevel.DEBUG, "Sending modified cluster state version " + baselineState.getVersion()
-                        + " to node " + node + ": " + modifiedBundle);
-                communicator.setSystemState(modifiedBundle, node, waiter);
+                ClusterState newState = buildModifiedClusterState(dbContext);
+                log.log(LogLevel.DEBUG, "Sending modified system state version " + systemState.getVersion()
+                        + " to node " + node + ": " + newState);
+                communicator.setSystemState(newState, node, waiter);
             } else {
-                log.log(LogLevel.DEBUG, "Sending system state version " + baselineState.getVersion() + " to node " + node
+                log.log(LogLevel.DEBUG, "Sending system state version " + systemState.getVersion() + " to node " + node
                         + ". (went down time " + node.getWentDownWithStartTime() + ", node start time " + node.getStartTimestamp() + ")");
-                communicator.setSystemState(clusterStateBundle, node, waiter);
+                communicator.setSystemState(systemState, node, waiter);
             }
         }
 
@@ -160,12 +157,12 @@ public class SystemStateBroadcaster {
 
     public int lastClusterStateVersionInSync() { return lastClusterStateInSync; }
 
-    private static boolean nodeNeedsToObserveStartupTimestamps(NodeInfo node) {
+    private boolean nodeNeedsToObserveStartupTimestamps(NodeInfo node) {
         return node.getStartTimestamp() != 0 && node.getWentDownWithStartTime() == node.getStartTimestamp();
     }
 
-    private static ClusterState buildModifiedClusterState(ClusterState sourceState, DatabaseHandler.Context dbContext) {
-        ClusterState newState = sourceState.clone();
+    private ClusterState buildModifiedClusterState(DatabaseHandler.Context dbContext) {
+        ClusterState newState = systemState.clone();
         for (NodeInfo n : dbContext.getCluster().getNodeInfo()) {
             NodeState ns = newState.getNodeState(n.getNode());
             if (!n.isDistributor() && ns.getStartTimestamp() == 0) {

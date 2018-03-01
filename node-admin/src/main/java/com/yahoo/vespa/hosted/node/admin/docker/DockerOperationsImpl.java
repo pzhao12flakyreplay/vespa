@@ -1,9 +1,6 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.hosted.node.admin.docker;
 
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.yahoo.collections.Pair;
 import com.yahoo.system.ProcessExecuter;
 import com.yahoo.vespa.hosted.dockerapi.Container;
@@ -15,16 +12,14 @@ import com.yahoo.vespa.hosted.dockerapi.DockerImpl;
 import com.yahoo.vespa.hosted.dockerapi.DockerNetworkCreator;
 import com.yahoo.vespa.hosted.dockerapi.ProcessResult;
 import com.yahoo.vespa.hosted.node.admin.ContainerNodeSpec;
-import com.yahoo.vespa.hosted.node.admin.component.Environment;
 import com.yahoo.vespa.hosted.node.admin.maintenance.acl.iptables.NATCommand;
+import com.yahoo.vespa.hosted.node.admin.util.Environment;
 import com.yahoo.vespa.hosted.node.admin.util.PrefixLogger;
 
 import java.io.IOException;
 import java.net.Inet6Address;
 import java.net.InetAddress;
 import java.net.URI;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -33,39 +28,79 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import static com.yahoo.vespa.defaults.Defaults.getDefaults;
+
 /**
  * Class that wraps the Docker class and have some tools related to running programs in docker.
  *
- * @author Haakon Dybdahl
+ * @author dybis
  */
 public class DockerOperationsImpl implements DockerOperations {
+    public static final String NODE_PROGRAM = getDefaults().underVespaHome("bin/vespa-nodectl");
+
+    private static final String[] RESUME_NODE_COMMAND = new String[]{NODE_PROGRAM, "resume"};
+    private static final String[] SUSPEND_NODE_COMMAND = new String[]{NODE_PROGRAM, "suspend"};
+    private static final String[] RESTART_VESPA_ON_NODE_COMMAND = new String[]{NODE_PROGRAM, "restart-vespa"};
+    private static final String[] STOP_NODE_COMMAND = new String[]{NODE_PROGRAM, "stop"};
 
     private static final String MANAGER_NAME = "node-admin";
 
-    private static final String LOCAL_IPV6_PREFIX = "fd00::";
-    private static final String DOCKER_CUSTOM_BRIDGE_NETWORK_NAME = "vespa-bridge";
-    
+    // Map of directories to mount and whether they should be writable by everyone
+    private static final Map<String, Boolean> DIRECTORIES_TO_MOUNT = new HashMap<>();
+
+    static {
+        DIRECTORIES_TO_MOUNT.put("/etc/yamas-agent", true);
+        DIRECTORIES_TO_MOUNT.put("/etc/filebeat", true);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/daemontools_y"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/jdisc_core"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/langdetect/"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/vespa"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/yca"), true);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/yck"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/yell"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/ykeykey"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/ykeykeyd"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/yms_agent"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/ysar"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/ystatus"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("logs/zpe_policy_updater"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/cache"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/crash"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/db/jdisc"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/db/vespa"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/jdisc_container"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/jdisc_core"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/maven"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/run"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/scoreboards"), true);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/service"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/share"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/spool"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/vespa"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/yca"), true);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/ycore++"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("var/zookeeper"), false);
+        DIRECTORIES_TO_MOUNT.put(getDefaults().underVespaHome("tmp"), false);
+    }
+
     private final Docker docker;
     private final Environment environment;
     private final ProcessExecuter processExecuter;
-    private final String nodeProgram;
-    private Map<Path, Boolean> directoriesToMount;
 
     public DockerOperationsImpl(Docker docker, Environment environment, ProcessExecuter processExecuter) {
         this.docker = docker;
         this.environment = environment;
         this.processExecuter = processExecuter;
-
-        this.nodeProgram = environment.pathInNodeUnderVespaHome("bin/vespa-nodectl").toString();
-        this.directoriesToMount = getDirectoriesToMount(environment);
     }
 
     @Override
-    public void createContainer(ContainerName containerName, final ContainerNodeSpec nodeSpec) {
+    public void startContainer(ContainerName containerName, final ContainerNodeSpec nodeSpec) {
         PrefixLogger logger = PrefixLogger.getNodeAgentLogger(DockerOperationsImpl.class, containerName);
-        logger.info("Creating container " + containerName);
+
+        logger.info("Starting container " + containerName);
         try {
             InetAddress nodeInetAddress = environment.getInetAddressForHost(nodeSpec.hostname);
+            final boolean isIPv6 = nodeInetAddress instanceof Inet6Address;
 
             String configServers = environment.getConfigServerUris().stream()
                     .map(URI::getHost)
@@ -77,29 +112,23 @@ public class DockerOperationsImpl implements DockerOperations {
                     containerName,
                     nodeSpec.hostname)
                     .withManagedBy(MANAGER_NAME)
-                    .withEnvironment("CONFIG_SERVER_ADDRESS", configServers) // TODO: Remove when all images support CONTAINER_ENVIRONMENT_SETTINGS
-                    .withEnvironment("CONTAINER_ENVIRONMENT_SETTINGS", createContainerEnvironmentSettings(environment, nodeSpec))
+                    .withEnvironment("CONFIG_SERVER_ADDRESS", configServers)
                     .withUlimit("nofile", 262_144, 262_144)
                     .withUlimit("nproc", 32_768, 409_600)
                     .withUlimit("core", -1, -1)
                     .withAddCapability("SYS_PTRACE") // Needed for gcore, pstack etc.
                     .withAddCapability("SYS_ADMIN"); // Needed for perf
 
-            if (!docker.networkNPTed()) {
+            if (!docker.networkNATed()) {
+                logger.info("Network not nated - setting up with specific ip address on a macvlan");
                 command.withIpAddress(nodeInetAddress);
                 command.withNetworkMode(DockerImpl.DOCKER_CUSTOM_MACVLAN_NETWORK_NAME);
-                command.withVolume("/etc/hosts", "/etc/hosts"); // TODO This is probably not necessary - review later
-            } else {
-                command.withIpAddress(NetworkPrefixTranslator.translate(
-                        nodeInetAddress,
-                        InetAddress.getByName(LOCAL_IPV6_PREFIX),
-                        64));
-                command.withNetworkMode(DOCKER_CUSTOM_BRIDGE_NETWORK_NAME);
+                command.withVolume("/etc/hosts", "/etc/hosts"); // TODO This is probably not nessesary - review later
             }
 
-            for (Path pathInNode : directoriesToMount.keySet()) {
+            for (String pathInNode : DIRECTORIES_TO_MOUNT.keySet()) {
                 String pathInHost = environment.pathInHostFromPathInNode(containerName, pathInNode).toString();
-                command.withVolume(pathInHost, pathInNode.toString());
+                command.withVolume(pathInHost, pathInNode);
             }
 
             // TODO: Enforce disk constraints
@@ -110,41 +139,27 @@ public class DockerOperationsImpl implements DockerOperations {
                 command.withEnvironment("VESPA_TOTAL_MEMORY_MB", Long.toString(minMainMemoryAvailableMb));
             }
 
-            logger.info("Creating new container with args: " + command);
+            logger.info("Starting new container with args: " + command);
             command.create();
 
-            docker.createContainer(command);
-        } catch (IOException e) {
-            throw new RuntimeException("Failed to create container " + containerName.asString(), e);
-        }
-    }
-
-    @Override
-    public void startContainer(ContainerName containerName, final ContainerNodeSpec nodeSpec) {
-        PrefixLogger logger = PrefixLogger.getNodeAgentLogger(DockerOperationsImpl.class, containerName);
-        logger.info("Starting container " + containerName);
-        try {
-            InetAddress nodeInetAddress = environment.getInetAddressForHost(nodeSpec.hostname);
-            boolean isIPv6 = nodeInetAddress instanceof Inet6Address;
-
             if (isIPv6) {
-                if (!docker.networkNPTed()) {
+                if (!docker.networkNATed()) {
                     docker.connectContainerToNetwork(containerName, "bridge");
                 }
 
                 docker.startContainer(containerName);
-                setupContainerNetworkConnectivity(containerName);
+                setupContainerNetworkConnectivity(containerName, nodeInetAddress);
             } else {
                 docker.startContainer(containerName);
+                if (docker.networkNATed()) {
+                    setupContainerNetworkConnectivity(containerName, nodeInetAddress);
+                }
             }
 
-            directoriesToMount.entrySet().stream()
-                    .filter(Map.Entry::getValue)
-                    .map(Map.Entry::getKey)
-                    .forEach(path ->
-                            docker.executeInContainerAsRoot(containerName, "chmod", "-R", "a+w", path.toString()));
+            DIRECTORIES_TO_MOUNT.entrySet().stream().filter(Map.Entry::getValue).forEach(entry ->
+                    docker.executeInContainerAsRoot(containerName, "chmod", "-R", "a+w", entry.getKey()));
         } catch (IOException e) {
-            throw new RuntimeException("Failed to start container " + containerName.asString(), e);
+            throw new RuntimeException("Failed to create container " + containerName.asString(), e);
         }
     }
 
@@ -160,7 +175,7 @@ public class DockerOperationsImpl implements DockerOperations {
         logger.info("Deleting container " + containerName.asString());
         docker.deleteContainer(containerName);
 
-        if (docker.networkNPTed()) {
+        if (docker.networkNATed()) {
             logger.info("Delete iptables NAT rules for " + containerName.asString());
             try {
                 InetAddress nodeInetAddress = environment.getInetAddressForHost(nodeSpec.hostname);
@@ -194,23 +209,28 @@ public class DockerOperationsImpl implements DockerOperations {
     public void trySuspendNode(ContainerName containerName) {
         try {
             // TODO: Change to waiting w/o timeout (need separate thread that we can stop).
-            executeCommandInContainer(containerName, nodeProgram, "suspend");
+            executeCommandInContainer(containerName, SUSPEND_NODE_COMMAND);
         } catch (RuntimeException e) {
             PrefixLogger logger = PrefixLogger.getNodeAgentLogger(DockerOperationsImpl.class, containerName);
             // It's bad to continue as-if nothing happened, but on the other hand if we do not proceed to
             // remove container, we will not be able to upgrade to fix any problems in the suspend logic!
-            logger.warning("Failed trying to suspend container " + containerName.asString(), e);
+            logger.warning("Failed trying to suspend container " + containerName.asString() + "  with "
+                    + Arrays.toString(SUSPEND_NODE_COMMAND), e);
         }
     }
 
     /**
      * For macvlan:
-     * <p>
      * Due to a bug in docker (https://github.com/docker/libnetwork/issues/1443), we need to manually set
      * IPv6 gateway in containers connected to more than one docker network
+     *
+     * For nat:
+     * Setup iptables NAT rules to map the hosts public ips to the containers
      */
-    private void setupContainerNetworkConnectivity(ContainerName containerName) throws IOException {
-        if (!docker.networkNPTed()) {
+    private void setupContainerNetworkConnectivity(ContainerName containerName, InetAddress externalAddress) throws IOException {
+        if (docker.networkNATed()) {
+            insertNAT(containerName, externalAddress);
+        } else {
             InetAddress hostDefaultGateway = DockerNetworkCreator.getDefaultGatewayLinux(true);
             executeCommandInNetworkNamespace(containerName,
                     "route", "-A", "inet6", "add", "default", "gw", hostDefaultGateway.getHostAddress(), "dev", "eth1");
@@ -254,7 +274,7 @@ public class DockerOperationsImpl implements DockerOperations {
         final String[] wrappedCommand = Stream.concat(
                 Stream.of("sudo", "nsenter", String.format("--net=/host/proc/%d/ns/net", containerPid), "--"),
                 Stream.of(command))
-                .toArray(String[]::new);
+        .toArray(String[]::new);
 
         try {
             Pair<Integer, String> result = processExecuter.exec(wrappedCommand);
@@ -274,17 +294,17 @@ public class DockerOperationsImpl implements DockerOperations {
 
     @Override
     public void resumeNode(ContainerName containerName) {
-        executeCommandInContainer(containerName, nodeProgram, "resume");
+        executeCommandInContainer(containerName, RESUME_NODE_COMMAND);
     }
 
     @Override
     public void restartVespaOnNode(ContainerName containerName) {
-        executeCommandInContainer(containerName, nodeProgram, "restart-vespa");
+        executeCommandInContainer(containerName, RESTART_VESPA_ON_NODE_COMMAND);
     }
 
     @Override
     public void stopServicesOnNode(ContainerName containerName) {
-        executeCommandInContainer(containerName, nodeProgram, "stop");
+        executeCommandInContainer(containerName, STOP_NODE_COMMAND);
     }
 
     @Override
@@ -307,69 +327,24 @@ public class DockerOperationsImpl implements DockerOperations {
         docker.deleteUnusedDockerImages();
     }
 
-    private String createContainerEnvironmentSettings(Environment environment, ContainerNodeSpec nodeSpec) {
-        ObjectMapper objectMapper = new ObjectMapper();
-
-        ContainerEnvironmentSettings settings = new ContainerEnvironmentSettings();
-        settings.set("configServerAddresses", environment.getConfigServerHostNames());
-        settings.set("nodeType", nodeSpec.nodeType);
-
-        try {
-            return objectMapper.writeValueAsString(settings);
-        } catch (JsonProcessingException e) {
-            throw new IllegalArgumentException("Could not write " + settings, e);
-        }
-    }
-
-    private class ContainerEnvironmentSettings {
-        @JsonProperty(value="environmentVariables")
-        private final Map<String, Object> variables = new HashMap<>();
-
-        void set(String argument, Object value) {
-            variables.put(argument, value);
-        }
-    }
-
     /**
-     * Returns map of directories to mount and whether they should be writable by everyone
+     * Only insert NAT rules if they don't exist (or else they compounded)
      */
-    private static Map<Path, Boolean> getDirectoriesToMount(Environment environment) {
-        final Map<Path, Boolean> directoriesToMount = new HashMap<>();
-        directoriesToMount.put(Paths.get("/etc/yamas-agent"), true);
-        directoriesToMount.put(Paths.get("/etc/filebeat"), true);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/daemontools_y"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/jdisc_core"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/langdetect/"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/vespa"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/yca"), true);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/yck"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/yell"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/ykeykey"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/ykeykeyd"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/yms_agent"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/ysar"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/ystatus"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("logs/zpu"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/cache"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/crash"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/db/jdisc"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/db/vespa"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/jdisc_container"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/jdisc_core"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/maven"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/run"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/scoreboards"), true);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/service"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/share"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/spool"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/vespa"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/yca"), true);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/ycore++"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/zookeeper"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/zpe"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("tmp"), false);
-        directoriesToMount.put(environment.pathInNodeUnderVespaHome("var/container-data"), false);
-        
-        return directoriesToMount;
+    private void insertNAT(ContainerName containerName, InetAddress externalAddress) throws IOException {
+        PrefixLogger logger = PrefixLogger.getNodeAgentLogger(DockerOperationsImpl.class, containerName);
+        String ipv6Str = docker.getGlobalIPv6Address(containerName);
+
+        // Check if exist
+        String checkCommand = NATCommand.check(externalAddress, InetAddress.getByName(ipv6Str));
+        Pair<Integer, String> result = processExecuter.exec(checkCommand);
+        if (result.getFirst() == 0 ) return;
+
+        // Setup NAT
+        String natCommand = NATCommand.insert(externalAddress, InetAddress.getByName(ipv6Str));
+        logger.info("Setting up NAT rules: " + natCommand);
+        result = processExecuter.exec(checkCommand);
+        if (result.getFirst() != 0 ) {
+            throw new IOException("Unable to setup NAT rule - error message: " + result.getSecond());
+        }
     }
 }

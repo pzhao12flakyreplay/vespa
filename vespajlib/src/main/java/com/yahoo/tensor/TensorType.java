@@ -77,13 +77,6 @@ public class TensorType {
         return Optional.empty();
     }
 
-    /* Returns the bound of this dimension if it is present and bound in this, empty otherwise */
-    public Optional<Long> sizeOfDimension(String dimension) {
-        Optional<Dimension> d = dimension(dimension);
-        if ( ! d.isPresent()) return Optional.empty();
-        return d.get().size();
-    }
-
     /**
      * Returns whether this type can be assigned to the given type,
      * i.e if the given type is a generalization of this type.
@@ -214,7 +207,7 @@ public class TensorType {
         /** Returns a copy of this with the name set to the given name */
         public abstract Dimension withName(String name);
 
-        /** Returns true if this is an indexed bound or unbound type */
+        /** Returns true if this is an indexed bound or unboun type */
         public boolean isIndexed() { return type() == Type.indexedBound || type() == Type.indexedUnbound; }
 
         /**
@@ -259,14 +252,6 @@ public class TensorType {
 
         public static Dimension indexed(String name, long size) {
             return new IndexedBoundDimension(name, size);
-        }
-
-        public static Dimension indexed(String name) {
-            return new IndexedUnboundDimension(name);
-        }
-
-        public static Dimension mapped(String name) {
-            return new MappedDimension(name);
         }
 
     }
@@ -380,15 +365,6 @@ public class TensorType {
         public Builder(TensorType ... types) {
             for (TensorType type : types)
                 addDimensionsOf(type);
-        }
-
-        /**
-         * Creates a builder from the given dimensions.
-         */
-        public Builder(Iterable<Dimension> dimensions) {
-            for (TensorType.Dimension dimension : dimensions) {
-                dimension(dimension);
-            }
         }
 
         private static final boolean supportsMixedTypes = false;

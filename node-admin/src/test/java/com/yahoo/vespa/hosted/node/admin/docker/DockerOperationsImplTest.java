@@ -8,7 +8,7 @@ import com.yahoo.vespa.hosted.dockerapi.ContainerName;
 import com.yahoo.vespa.hosted.dockerapi.Docker;
 import com.yahoo.vespa.hosted.dockerapi.DockerImage;
 import com.yahoo.vespa.hosted.dockerapi.ProcessResult;
-import com.yahoo.vespa.hosted.node.admin.component.Environment;
+import com.yahoo.vespa.hosted.node.admin.util.Environment;
 import org.junit.Test;
 import org.mockito.InOrder;
 
@@ -27,11 +27,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 public class DockerOperationsImplTest {
-    private final Environment environment = new Environment.Builder()
-            .region("us-east-1")
-            .environment("prod")
-            .system("main")
-            .build();
+    private final Environment environment = new Environment.Builder().build();
     private final Docker docker = mock(Docker.class);
     private final ProcessExecuter processExecuter = mock(ProcessExecuter.class);
     private final DockerOperationsImpl dockerOperations = new DockerOperationsImpl(docker, environment, processExecuter);
@@ -58,7 +54,7 @@ public class DockerOperationsImplTest {
     }
 
     @Test(expected = RuntimeException.class)
-    public void processResultFromNodeProgramWhenNonZeroExitCode() {
+    public void processResultFromNodeProgramWhenNonZeroExitCode() throws Exception {
         final ContainerName containerName = new ContainerName("container-name");
         final ProcessResult actualResult = new ProcessResult(3, "output", "errors");
         final String programPath = "/bin/command";

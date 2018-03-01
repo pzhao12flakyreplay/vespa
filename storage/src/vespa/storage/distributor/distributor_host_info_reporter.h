@@ -7,7 +7,6 @@
 namespace storage {
 namespace distributor {
 
-class BucketSpacesStatsProvider;
 class LatencyStatisticsProvider;
 class MinReplicaProvider;
 struct OperationStats;
@@ -16,8 +15,7 @@ class DistributorHostInfoReporter : public HostReporter
 {
 public:
     DistributorHostInfoReporter(LatencyStatisticsProvider& latencyProvider,
-                                MinReplicaProvider& minReplicaProvider,
-                                BucketSpacesStatsProvider& bucketSpacesStatsProvider);
+                                MinReplicaProvider& minReplicaProvider);
 
     DistributorHostInfoReporter(const DistributorHostInfoReporter&) = delete;
     DistributorHostInfoReporter& operator=(
@@ -45,7 +43,6 @@ public:
 private:
     LatencyStatisticsProvider& _latencyProvider;
     MinReplicaProvider& _minReplicaProvider;
-    BucketSpacesStatsProvider& _bucketSpacesStatsProvider;
     std::atomic<bool> _enabled;
 };
 

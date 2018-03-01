@@ -68,20 +68,21 @@ public class DeployState implements ConfigDefinitionStore {
     private final Version wantedNodeVespaVersion;
     private final Instant now;
     private final HostProvisioner provisioner;
+    private final boolean disableFiledistributor;
 
     public static DeployState createTestState() {
-        return new Builder().build(true);
+        return new Builder().build();
     }
 
     public static DeployState createTestState(ApplicationPackage applicationPackage) {
-        return new Builder().applicationPackage(applicationPackage).build(true);
+        return new Builder().applicationPackage(applicationPackage).build();
     }
 
     private DeployState(ApplicationPackage applicationPackage, SearchDocumentModel searchDocumentModel, RankProfileRegistry rankProfileRegistry,
                         FileRegistry fileRegistry, DeployLogger deployLogger, Optional<HostProvisioner> hostProvisioner, DeployProperties properties,
                         Optional<ApplicationPackage> permanentApplicationPackage, Optional<ConfigDefinitionRepo> configDefinitionRepo,
                         java.util.Optional<Model> previousModel, Set<Rotation> rotations, Zone zone, QueryProfiles queryProfiles,
-                        SemanticRules semanticRules, Instant now, Version wantedNodeVespaVersion) {
+                        SemanticRules semanticRules, Instant now, Version wantedNodeVespaVersion, boolean disableFiledistributor) {
         this.logger = deployLogger;
         this.fileRegistry = fileRegistry;
         this.rankProfileRegistry = rankProfileRegistry;
@@ -100,6 +101,7 @@ public class DeployState implements ConfigDefinitionStore {
         this.validationOverrides = applicationPackage.getValidationOverrides().map(ValidationOverrides::fromXml).orElse(ValidationOverrides.empty);
         this.wantedNodeVespaVersion = wantedNodeVespaVersion;
         this.now = now;
+        this.disableFiledistributor = disableFiledistributor;
     }
 
     public static HostProvisioner getDefaultModelHostProvisioner(ApplicationPackage applicationPackage) {
@@ -213,6 +215,8 @@ public class DeployState implements ConfigDefinitionStore {
 
     public Instant now() { return now; }
 
+    public boolean disableFiledistributor() { return disableFiledistributor; }
+
     public static class Builder {
 
         private ApplicationPackage applicationPackage = MockApplicationPackage.createEmpty();
@@ -227,6 +231,7 @@ public class DeployState implements ConfigDefinitionStore {
         private Zone zone = Zone.defaultZone();
         private Instant now = Instant.now();
         private Version wantedNodeVespaVersion = Vtag.currentVersion;
+        private boolean disableFiledistributor = false;
 
         public Builder applicationPackage(ApplicationPackage applicationPackage) {
             this.applicationPackage = applicationPackage;
@@ -288,20 +293,24 @@ public class DeployState implements ConfigDefinitionStore {
             return this;
         }
 
-        public DeployState build(boolean validate) {
+        public Builder disableFiledistributor(boolean disableFiledistributor) {
+            this.disableFiledistributor = disableFiledistributor;
+            return this;
+        }
+
+        public DeployState build() {
             RankProfileRegistry rankProfileRegistry = new RankProfileRegistry();
             QueryProfiles queryProfiles = new QueryProfilesBuilder().build(applicationPackage);
             SemanticRules semanticRules = new SemanticRuleBuilder().build(applicationPackage);
-            SearchDocumentModel searchDocumentModel = createSearchDocumentModel(rankProfileRegistry, logger, queryProfiles, validate);
+            SearchDocumentModel searchDocumentModel = createSearchDocumentModel(rankProfileRegistry, logger, queryProfiles);
             return new DeployState(applicationPackage, searchDocumentModel, rankProfileRegistry, fileRegistry, logger, hostProvisioner,
                                    properties, permanentApplicationPackage, configDefinitionRepo, previousModel, rotations,
-                                   zone, queryProfiles, semanticRules, now, wantedNodeVespaVersion);
+                                   zone, queryProfiles, semanticRules, now, wantedNodeVespaVersion, disableFiledistributor);
         }
 
         private SearchDocumentModel createSearchDocumentModel(RankProfileRegistry rankProfileRegistry,
                                                               DeployLogger logger,
-                                                              QueryProfiles queryProfiles,
-                                                              boolean validate) {
+                                                              QueryProfiles queryProfiles) {
             Collection<NamedReader> readers = applicationPackage.getSearchDefinitions();
             Map<String, String> names = new LinkedHashMap<>();
             SearchBuilder builder = new SearchBuilder(applicationPackage, rankProfileRegistry, queryProfiles.getRegistry());
@@ -324,7 +333,7 @@ public class DeployState implements ConfigDefinitionStore {
                     closeIgnoreException(reader.getReader());
                 }
             }
-            builder.build(validate, logger);
+            builder.build(logger, queryProfiles);
             return SearchDocumentModel.fromBuilderAndNames(builder, names);
         }
 

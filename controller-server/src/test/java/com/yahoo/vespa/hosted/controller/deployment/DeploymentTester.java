@@ -17,6 +17,7 @@ import com.yahoo.vespa.hosted.controller.application.ApplicationPackage;
 import com.yahoo.vespa.hosted.controller.application.Change;
 import com.yahoo.vespa.hosted.controller.application.DeploymentJobs;
 import com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobType;
+import com.yahoo.vespa.hosted.controller.application.SourceRevision;
 import com.yahoo.vespa.hosted.controller.maintenance.JobControl;
 import com.yahoo.vespa.hosted.controller.maintenance.ReadyJobsTrigger;
 import com.yahoo.vespa.hosted.controller.maintenance.Upgrader;
@@ -24,10 +25,12 @@ import com.yahoo.vespa.hosted.controller.versions.VersionStatus;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static com.yahoo.vespa.hosted.controller.application.DeploymentJobs.JobError.unknown;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -42,6 +45,7 @@ public class DeploymentTester {
 
     // Set a long interval so that maintainers never do scheduled runs during tests
     private static final Duration maintenanceInterval = Duration.ofDays(1);
+    private static final int defaultBuildNumber = 42;
 
     private final ControllerTester tester;
     private final Upgrader upgrader;
@@ -68,7 +72,9 @@ public class DeploymentTester {
 
     public ApplicationController applications() { return tester.controller().applications(); }
 
-    public DeploymentQueue deploymentQueue() { return tester.controller().applications().deploymentTrigger().deploymentQueue(); }
+    // TODO: This thing simulates the wrong thing: the build system won't hold the jobs that are running,
+    // and so these should be consumed immediately upon triggering, and be "somewhere else" while running.
+    public BuildSystem buildSystem() { return tester.controller().applications().deploymentTrigger().buildSystem(); }
 
     public DeploymentTrigger deploymentTrigger() { return tester.controller().applications().deploymentTrigger(); }
 
@@ -114,11 +120,6 @@ public class DeploymentTester {
 
     public void restartController() { tester.createNewController(); }
 
-    /** Notify the controller about a job completing */
-    public BuildJob jobCompletion(JobType job) {
-        return new BuildJob(this::notifyJobCompletion, tester.artifactRepository()).type(job);
-    }
-
     /** Simulate the full lifecycle of an application deployment as declared in given application package */
     public Application createAndDeploy(String applicationName, int projectId, ApplicationPackage applicationPackage) {
         TenantId tenantId = tester.createTenant("tenant1", "domain1", 1L);
@@ -150,16 +151,33 @@ public class DeploymentTester {
 
     /** Deploy application completely using the given application package */
     public void deployCompletely(Application application, ApplicationPackage applicationPackage) {
-        deployCompletely(application, applicationPackage, BuildJob.defaultBuildNumber);
-    }
-
-    public void deployCompletely(Application application, ApplicationPackage applicationPackage, long buildNumber) {
-        jobCompletion(JobType.component).application(application)
-                                        .buildNumber(buildNumber)
-                                        .uploadArtifact(applicationPackage)
-                                        .submit();
+        notifyJobCompletion(JobType.component, application, true);
         assertTrue(applications().require(application.id()).change().isPresent());
         completeDeployment(application, applicationPackage, Optional.empty(), true);
+    }
+
+    public static DeploymentJobs.JobReport jobReport(Application application, JobType jobType, boolean success) {
+        return jobReport(application, jobType, Optional.ofNullable(success ? null : unknown), Optional.empty(), defaultBuildNumber);
+    }
+
+    public static DeploymentJobs.JobReport jobReport(Application application, JobType jobType,
+                                                     Optional<DeploymentJobs.JobError> jobError,
+                                                     Optional<SourceRevision> sourceRevision, long buildNumber) {
+        return new DeploymentJobs.JobReport(
+                application.id(),
+                jobType,
+                application.deploymentJobs().projectId().get(),
+                buildNumber,
+                sourceRevision,
+                jobError
+        );
+    }
+
+    /** Deploy application using the given application package, but expecting to stop after test phases */
+    public void deployTestOnly(Application application, ApplicationPackage applicationPackage) {
+        notifyJobCompletion(JobType.component, application, true);
+        assertTrue(applications().require(application.id()).change().isPresent());
+        completeDeployment(application, applicationPackage, Optional.empty(), false);
     }
 
     private void completeDeployment(Application application, ApplicationPackage applicationPackage,
@@ -184,6 +202,20 @@ public class DeploymentTester {
         else {
             assertTrue(applications().require(application.id()).change().isPresent());
         }
+    }
+
+    public void notifyJobCompletion(JobType jobType, Application application, boolean success) {
+        notifyJobCompletion(jobType, application, Optional.ofNullable(success ? null : unknown));
+    }
+
+    public void notifyJobCompletion(JobType jobType, Application application, Optional<DeploymentJobs.JobError> jobError) {
+        notifyJobCompletion(jobType, application, jobError, Optional.empty(), defaultBuildNumber);
+    }
+
+    public void notifyJobCompletion(JobType jobType, Application application, Optional<DeploymentJobs.JobError> jobError,
+                                    Optional<SourceRevision> source, long buildNumber) {
+        clock().advance(Duration.ofMillis(1));
+        applications().notifyJobCompletion(jobReport(application, jobType, jobError, source, buildNumber));
     }
 
     public void completeUpgrade(Application application, Version version, String upgradePolicy) {
@@ -250,11 +282,11 @@ public class DeploymentTester {
                 }
                 deploy(job, application, applicationPackage, false);
             }
+            notifyJobCompletion(job, application, success);
             // Deactivate test deployments after deploy. This replicates the behaviour of the tenant pipeline
             if (job.isTest()) {
                 controller().applications().deactivate(application, job.zone(controller().system()).get());
             }
-            jobCompletion(job).application(application).success(success).submit();
         }
     }
 
@@ -267,25 +299,21 @@ public class DeploymentTester {
         }
         if (expectOnlyTheseJobs)
             assertEquals(jobs.length, countJobsOf(application));
-        deploymentQueue().removeJobs(application.id());
+        buildSystem().removeJobs(application.id());
     }
 
     private BuildService.BuildJob findJob(Application application, JobType jobType) {
-        for (BuildService.BuildJob job : deploymentQueue().jobs())
+        for (BuildService.BuildJob job : buildSystem().jobs()) {
             if (job.projectId() == application.deploymentJobs().projectId().get() && job.jobName().equals(jobType.jobName()))
                 return job;
-        throw new IllegalArgumentException(jobType + " is not scheduled for " + application);
+        }
+        throw new NoSuchElementException(jobType + " is not scheduled for " + application);
     }
 
     private int countJobsOf(Application application) {
-        return (int) deploymentQueue().jobs().stream()
-                .filter(job -> job.projectId() == application.deploymentJobs().projectId().get())
-                .count();
-    }
-
-    private void notifyJobCompletion(DeploymentJobs.JobReport report) {
-        clock().advance(Duration.ofMillis(1));
-        applications().notifyJobCompletion(report);
+        return (int)buildSystem().jobs().stream()
+                                        .filter(job -> job.projectId() == application.deploymentJobs().projectId().get())
+                                        .count();
     }
 
     public static ApplicationPackage applicationPackage(String upgradePolicy) {
@@ -293,6 +321,7 @@ public class DeploymentTester {
                 .upgradePolicy(upgradePolicy)
                 .environment(Environment.prod)
                 .region("us-west-1")
+                .environment(Environment.prod)
                 .region("us-east-3")
                 .build();
     }

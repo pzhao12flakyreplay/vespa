@@ -4,7 +4,6 @@
 #include <vespa/metrics/metricmanager.h>
 #include <vespa/storageapi/message/bucket.h>
 #include <vespa/storageapi/message/state.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
 #include <vespa/storage/frameworkimpl/component/storagecomponentregisterimpl.h>
 #include <vespa/storage/storageserver/statemanager.h>
 #include <tests/common/teststorageapp.h>
@@ -106,7 +105,7 @@ StateManagerTest::testSystemState()
 {
     std::shared_ptr<api::StorageReply> reply;
         // Verify initial state on startup
-    ClusterState::CSP currentState = _manager->getClusterStateBundle()->getBaselineClusterState();
+    ClusterState::CSP currentState = _manager->getSystemState();
     CPPUNIT_ASSERT_EQUAL(std::string("cluster:d"),
                          currentState->toString(false));
 
@@ -119,7 +118,7 @@ StateManagerTest::testSystemState()
     _upper->sendDown(cmd);
     GET_ONLY_OK_REPLY(reply);
 
-    currentState = _manager->getClusterStateBundle()->getBaselineClusterState();
+    currentState = _manager->getSystemState();
     CPPUNIT_ASSERT_EQUAL(sendState, *currentState);
 
     currentNodeState = _manager->getCurrentNodeState();
@@ -226,7 +225,7 @@ StateManagerTest::testReportedNodeState()
 void
 StateManagerTest::testClusterStateVersion()
 {
-    ClusterState state(*_manager->getClusterStateBundle()->getBaselineClusterState());
+    ClusterState state(*_manager->getSystemState());
     state.setVersion(123);
     _manager->setClusterState(state);
 

@@ -3,7 +3,6 @@ package com.yahoo.vespa.hosted.node.admin.nodeagent;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.yahoo.concurrent.ThreadFactoryFactory;
-import com.yahoo.config.provision.NodeType;
 import com.yahoo.vespa.hosted.dockerapi.Container;
 import com.yahoo.vespa.hosted.dockerapi.ContainerName;
 import com.yahoo.vespa.hosted.dockerapi.ContainerResources;
@@ -18,11 +17,10 @@ import com.yahoo.vespa.hosted.dockerapi.metrics.MetricReceiverWrapper;
 import com.yahoo.vespa.hosted.node.admin.ContainerNodeSpec;
 import com.yahoo.vespa.hosted.node.admin.docker.DockerOperations;
 import com.yahoo.vespa.hosted.node.admin.maintenance.StorageMaintainer;
-import com.yahoo.vespa.hosted.node.admin.containerdata.ConfigServerContainerData;
-import com.yahoo.vespa.hosted.node.admin.configserver.noderepository.NodeRepository;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.Orchestrator;
-import com.yahoo.vespa.hosted.node.admin.configserver.orchestrator.OrchestratorException;
-import com.yahoo.vespa.hosted.node.admin.component.Environment;
+import com.yahoo.vespa.hosted.node.admin.noderepository.NodeRepository;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.Orchestrator;
+import com.yahoo.vespa.hosted.node.admin.orchestrator.OrchestratorException;
+import com.yahoo.vespa.hosted.node.admin.util.Environment;
 import com.yahoo.vespa.hosted.node.admin.util.PrefixLogger;
 import com.yahoo.vespa.hosted.provision.Node;
 
@@ -107,6 +105,8 @@ public class NodeAgentImpl implements NodeAgent {
 
     private ContainerState containerState = UNKNOWN;
 
+    // The attributes of the last successful node repo attribute update for this node. Used to avoid redundant calls.
+    private NodeAttributes lastAttributesSet = null;
     private ContainerNodeSpec lastNodeSpec = null;
     private CpuUsageReporter lastCpuMetric = new CpuUsageReporter();
 
@@ -230,13 +230,7 @@ public class NodeAgentImpl implements NodeAgent {
     }
 
     private void updateNodeRepoWithCurrentAttributes(final ContainerNodeSpec nodeSpec) {
-        final NodeAttributes currentNodeAttributes = new NodeAttributes()
-                .withRestartGeneration(nodeSpec.currentRestartGeneration.orElse(null))
-                .withRebootGeneration(nodeSpec.currentRebootGeneration.orElse(0L))
-                .withDockerImage(nodeSpec.currentDockerImage.orElse(new DockerImage("")))
-                .withVespaVersion(nodeSpec.vespaVersion.orElse(""));
-
-        final NodeAttributes wantedNodeAttributes = new NodeAttributes()
+        final NodeAttributes nodeAttributes = new NodeAttributes()
                 .withRestartGeneration(nodeSpec.wantedRestartGeneration.orElse(null))
                 // update reboot gen with wanted gen if set, we ignore reboot for Docker nodes but
                 // want the two to be equal in node repo
@@ -244,24 +238,24 @@ public class NodeAgentImpl implements NodeAgent {
                 .withDockerImage(nodeSpec.wantedDockerImage.filter(node -> containerState != ABSENT).orElse(new DockerImage("")))
                 .withVespaVersion(nodeSpec.wantedVespaVersion.filter(node -> containerState != ABSENT).orElse(""));
 
-        publishStateToNodeRepoIfChanged(currentNodeAttributes, wantedNodeAttributes);
+        publishStateToNodeRepoIfChanged(nodeAttributes);
     }
 
-    private void publishStateToNodeRepoIfChanged(NodeAttributes currentAttributes, NodeAttributes wantedAttributes) {
-        if (!currentAttributes.equals(wantedAttributes)) {
+    private void publishStateToNodeRepoIfChanged(NodeAttributes currentAttributes) {
+        // TODO: We should only update if the new current values do not match the node repo's current values
+        if (!currentAttributes.equals(lastAttributesSet)) {
             logger.info("Publishing new set of attributes to node repo: "
-                    + currentAttributes + " -> " + wantedAttributes);
+                    + lastAttributesSet + " -> " + currentAttributes);
             addDebugMessage("Publishing new set of attributes to node repo: {" +
-                    currentAttributes + "} -> {" + wantedAttributes + "}");
-            nodeRepository.updateNodeAttributes(hostname, wantedAttributes);
+                    lastAttributesSet + "} -> {" + currentAttributes + "}");
+            nodeRepository.updateNodeAttributes(hostname, currentAttributes);
+            lastAttributesSet = currentAttributes;
         }
     }
 
     private void startContainer(ContainerNodeSpec nodeSpec) {
-        createContainerData(nodeSpec);
-        dockerOperations.createContainer(containerName, nodeSpec);
-        dockerOperations.startContainer(containerName, nodeSpec);
         aclMaintainer.run();
+        dockerOperations.startContainer(containerName, nodeSpec);
         lastCpuMetric = new CpuUsageReporter();
 
         currentFilebeatRestarter = filebeatRestarter.scheduleWithFixedDelay(() -> serviceRestarter.accept("filebeat"), 1, 1, TimeUnit.DAYS);
@@ -534,8 +528,6 @@ public class NodeAgentImpl implements NodeAgent {
                 .add("role", "tenants")
                 .add("state", nodeSpec.nodeState.toString())
                 .add("parentHostname", environment.getParentHostHostname());
-        nodeSpec.allowedToBeDown.ifPresent(allowed ->
-                dimensionsBuilder.add("orchestratorState", allowed ? "ALLOWED_TO_BE_DOWN" : "NO_REMARKS"));
         Dimensions dimensions = dimensionsBuilder.build();
 
         Docker.ContainerStats stats = containerStats.get();
@@ -679,12 +671,5 @@ public class NodeAgentImpl implements NodeAgent {
     private void orchestratorSuspendNode() {
         logger.info("Ask Orchestrator for permission to suspend node " + hostname);
         orchestrator.suspend(hostname);
-    }
-
-    private void createContainerData(ContainerNodeSpec nodeSpec) {
-        if (nodeSpec.nodeType.equals(NodeType.config.name())) {
-            logger.info("Creating files needed by config server");
-            new ConfigServerContainerData(environment, nodeSpec.hostname).create();
-        }
     }
 }

@@ -8,6 +8,7 @@ import com.yahoo.container.Container;
 import com.yahoo.processing.Request;
 import com.yahoo.processing.Response;
 import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import static org.hamcrest.CoreMatchers.equalTo;
@@ -62,7 +63,7 @@ public class JDiscContainerProcessingTest {
         }
 
         try (JDisc container = getContainerWithRot13()) {
-            final int NUM_TIMES = 100;
+            final int NUM_TIMES = 10000;
             for (int i = 0; i < NUM_TIMES; i++) {
 
 

@@ -1,157 +1,217 @@
 // Copyright 2017 Yahoo Holdings. Licensed under the terms of the Apache 2.0 license. See LICENSE in the project root.
 package com.yahoo.vespa.clustercontroller.core;
 
-import com.google.common.collect.Sets;
 import org.junit.Test;
+import org.junit.runner.RunWith;
+import org.mockito.runners.MockitoJUnitRunner;
 
 import java.util.*;
 
 import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
+import static org.mockito.Matchers.any;
+import static org.mockito.Mockito.*;
 
 /**
  * @author hakonhall
  * @since 5.34
  */
+@RunWith(MockitoJUnitRunner.class)
 public class ClusterStatsAggregatorTest {
 
-    private static class Fixture {
-        private ClusterStatsAggregator aggregator;
-        public Fixture(Set<Integer> distributorNodes,
-                Set<Integer> contentNodes) {
-            aggregator = new ClusterStatsAggregator(distributorNodes, contentNodes);
-        }
-        public void update(int distributorIndex, ContentClusterStatsBuilder clusterStats) {
-            aggregator.updateForDistributor(distributorIndex, clusterStats.build());
-        }
-        public void verify(ContentClusterStatsBuilder expectedStats) {
-            assertEquals(expectedStats.build(), aggregator.getAggregatedStats());
-        }
-        public boolean hasUpdatesFromAllDistributors() {
-            return aggregator.hasUpdatesFromAllDistributors();
-        }
-        public boolean mayHaveBucketsPendingInGlobalSpace() {
-            return aggregator.mayHaveBucketsPendingInGlobalSpace();
+    final Set<Integer> distributors = new HashSet<>();
+    final Set<Integer> storageNodes = new HashSet<>();
+    final Map<Integer, String> hostnames = new HashMap<>();
+    final MetricUpdater updater = mock(MetricUpdater.class);
+    StorageMergeStats storageStats;
+
+    private void addDistributors(Integer... indices) {
+        for (Integer i : indices) {
+            distributors.add(i);
         }
     }
 
-    private static Set<Integer> distributorNodes(Integer... indices) {
-        return Sets.newHashSet(indices);
+    private static class StorageNodeSpec {
+        public StorageNodeSpec(Integer index, String hostname) {
+            this.index = index;
+            this.hostname = hostname;
+        }
+        public Integer index;
+        public String hostname;
     }
 
-    private static Set<Integer> contentNodes(Integer... indices) {
-        return Sets.newHashSet(indices);
+    private void addStorageNodes(StorageNodeSpec... specs) {
+        for (StorageNodeSpec spec : specs) {
+            storageNodes.add(spec.index);
+            hostnames.put(spec.index, spec.hostname);
+        }
+        storageStats = new StorageMergeStats(storageNodes);
     }
 
-    @Test
-    public void aggregator_handles_updates_to_single_distributor_and_content_node() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3));
-        ContentClusterStatsBuilder stats = new ContentClusterStatsBuilder()
-                .add(3, "default", 10, 1)
-                .add(3, "global", 11, 2);
-        f.update(1, stats);
-        f.verify(stats);
+    private void putStorageStats(int index, int syncing, int copyingIn, int movingOut, int copyingOut) {
+        storageStats.getStorageNode(index).set(createStats(index, syncing, copyingIn, movingOut, copyingOut));
     }
 
-    @Test
-    public void aggregator_handles_updates_to_multiple_distributors_and_content_nodes() {
-        Fixture f = new Fixture(distributorNodes(1, 2), contentNodes(3, 4));
-
-        f.update(1, new ContentClusterStatsBuilder()
-                .add(3, "default", 10, 1)
-                .add(3, "global", 11, 2)
-                .add(4, "default", 12, 3)
-                .add(4, "global", 13, 4));
-        f.update(2, new ContentClusterStatsBuilder()
-                .add(3, "default", 14, 5)
-                .add(3, "global", 15, 6)
-                .add(4, "default", 16, 7)
-                .add(4, "global", 17, 8));
-        f.verify(new ContentClusterStatsBuilder()
-                .add(3, "default", 10 + 14, 1 + 5)
-                .add(3, "global", 11 + 15, 2 + 6)
-                .add(4, "default", 12 + 16, 3 + 7)
-                .add(4, "global", 13 + 17, 4 + 8));
+    private static NodeMergeStats createStats(int index, int syncing, int copyingIn, int movingOut, int copyingOut) {
+        return new NodeMergeStats(
+                index,
+                new NodeMergeStats.Amount(syncing),
+                new NodeMergeStats.Amount(copyingIn),
+                new NodeMergeStats.Amount(movingOut),
+                new NodeMergeStats.Amount(copyingOut));
     }
 
     @Test
-    public void aggregator_handles_multiple_updates_from_same_distributor() {
-        Fixture f = new Fixture(distributorNodes(1, 2), contentNodes(3));
+    public void testSimple() {
+        final int distributorIndex = 1;
+        addDistributors(distributorIndex);
 
-        f.update(1, new ContentClusterStatsBuilder().add(3, "default"));
-        f.verify(new ContentClusterStatsBuilder().add(3, "default"));
+        final int storageNodeIndex = 11;
+        addStorageNodes(new StorageNodeSpec(storageNodeIndex, "storage-node"));
 
-        f.update(2, new ContentClusterStatsBuilder().add(3, "default", 10, 1));
-        f.verify(new ContentClusterStatsBuilder().addInvalid(3, "default", 10, 1));
+        putStorageStats(storageNodeIndex, 5, 6, 7, 8);
 
-        f.update(1, new ContentClusterStatsBuilder().add(3, "default", 11, 2));
-        f.verify(new ContentClusterStatsBuilder().add(3, "default", 10 + 11, 1 + 2));
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+        aggregator.updateForDistributor(hostnames, distributorIndex, storageStats);
 
-        f.update(2, new ContentClusterStatsBuilder().add(3, "default", 15, 6));
-        f.verify(new ContentClusterStatsBuilder().add(3, "default", 11 + 15, 2 + 6));
+        Map<String, NodeMergeStats> expectedStorageNodeStats = new HashMap<>();
+        expectedStorageNodeStats.put("storage-node", createStats(storageNodeIndex, 5, 6, 7, 8));
 
-        f.update(1, new ContentClusterStatsBuilder().add(3, "default", 16, 7));
-        f.verify(new ContentClusterStatsBuilder().add(3, "default", 15 + 16, 6 + 7));
-
-        f.update(2, new ContentClusterStatsBuilder().add(3, "default", 12, 3));
-        f.verify(new ContentClusterStatsBuilder().add(3, "default", 16 + 12, 7 + 3));
+        verify(updater).updateMergeOpMetrics(expectedStorageNodeStats);
     }
 
     @Test
-    public void aggregator_handles_more_content_nodes_that_distributors() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3, 4));
-        ContentClusterStatsBuilder stats = new ContentClusterStatsBuilder()
-                .add(3, "default", 10, 1)
-                .add(4, "default", 11, 2);
-        f.update(1, stats);
-        f.verify(stats);
+    public void testComplex() {
+        final int distributor1 = 1;
+        final int distributor2 = 2;
+        addDistributors(distributor1, distributor2);
+
+        final int storageNode1 = 11;
+        final int storageNode2 = 12;
+        addStorageNodes(
+                new StorageNodeSpec(storageNode1, "storage-node-1"),
+                new StorageNodeSpec(storageNode2, "storage-node-2"));
+
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+
+        // Distributor 1.
+        putStorageStats(storageNode1, 0, 1, 2, 3);
+        putStorageStats(storageNode2, 20, 21, 22, 23);
+        aggregator.updateForDistributor(hostnames, distributor1, storageStats);
+
+        // Distributor 2.
+        putStorageStats(storageNode1, 10, 11, 12, 13);
+        putStorageStats(storageNode2, 30, 31, 32, 33);
+        aggregator.updateForDistributor(hostnames, distributor2, storageStats);
+
+        Map<String, NodeMergeStats> expectedStorageNodeStats = new HashMap<>();
+        expectedStorageNodeStats.put("storage-node-1", createStats(storageNode1, 0 + 10, 1 + 11, 2 + 12, 3 + 13));
+        expectedStorageNodeStats.put("storage-node-2", createStats(storageNode2, 20 + 30, 21 + 31, 22 + 32, 23 + 33));
+
+        verify(updater, times(1)).updateMergeOpMetrics(expectedStorageNodeStats);
     }
 
     @Test
-    public void aggregator_ignores_updates_to_unknown_distributor() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3));
-        final int downDistributorIndex = 2;
-        f.update(downDistributorIndex, new ContentClusterStatsBuilder()
-                .add(3, "default", 7, 3));
-        f.verify(new ContentClusterStatsBuilder().add(3));
+    public void testHashCodeCache() {
+        final int distributor1 = 1;
+        final int distributor2 = 2;
+        addDistributors(distributor1, distributor2);
+
+        final int storageNode1 = 11;
+        final int storageNode2 = 12;
+        addStorageNodes(
+                new StorageNodeSpec(storageNode1, "storage-node-1"),
+                new StorageNodeSpec(storageNode2, "storage-node-2"));
+
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+
+        // Distributor 1.
+        putStorageStats(storageNode1, 0, 1, 2, 3);
+        putStorageStats(storageNode2, 20, 21, 22, 23);
+        aggregator.updateForDistributor(hostnames, distributor1, storageStats);
+
+        // Distributor 2.
+        putStorageStats(storageNode1, 10, 11, 12, 13);
+        putStorageStats(storageNode2, 30, 31, 32, 33);
+        aggregator.updateForDistributor(hostnames, distributor2, storageStats);
+
+        // If we add call another updateForDistributor with the same arguments, updateMergeOpMetrics() should not be called.
+        // See times(1) below.
+        aggregator.updateForDistributor(hostnames, distributor2, storageStats);
+
+        Map<String, NodeMergeStats> expectedStorageNodeStats = new HashMap<>();
+        expectedStorageNodeStats.put("storage-node-1", createStats(storageNode1, 0 + 10, 1 + 11, 2 + 12, 3 + 13));
+        expectedStorageNodeStats.put("storage-node-2", createStats(storageNode2, 20 + 30, 21 + 31, 22 + 32, 23 + 33));
+
+
+        verify(updater, times(1)).updateMergeOpMetrics(expectedStorageNodeStats);
     }
 
     @Test
-    public void aggregator_tracks_when_it_has_updates_from_all_distributors() {
-        Fixture f = new Fixture(distributorNodes(1, 2), contentNodes(3));
-        assertFalse(f.hasUpdatesFromAllDistributors());
-        f.update(1, new ContentClusterStatsBuilder().add(3, "default"));
-        assertFalse(f.hasUpdatesFromAllDistributors());
-        f.update(1, new ContentClusterStatsBuilder().add(3, "default", 10, 1));
-        assertFalse(f.hasUpdatesFromAllDistributors());
-        f.update(2, new ContentClusterStatsBuilder().add(3, "default"));
-        assertTrue(f.hasUpdatesFromAllDistributors());
+    public void testUnknownDistributor() {
+        final int upDistributor = 1;
+        final int DownDistributorIndex = 2;
+        addDistributors(upDistributor);
+
+        final int storageNodeIndex = 11;
+        addStorageNodes(new StorageNodeSpec(storageNodeIndex, "storage-node"));
+
+        putStorageStats(storageNodeIndex, 5, 6, 7, 8);
+
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+        aggregator.updateForDistributor(hostnames, DownDistributorIndex, storageStats);
+
+        verify(updater, never()).updateMergeOpMetrics(any());
     }
 
     @Test
-    public void cluster_without_updates_from_all_distributors_may_have_buckets_pending() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3, 4));
-        assertTrue(f.mayHaveBucketsPendingInGlobalSpace());
+    public void testMoreStorageNodesThanDistributors() {
+        final int distributor1 = 1;
+        addDistributors(distributor1);
+
+        final int storageNode1 = 11;
+        final int storageNode2 = 12;
+        addStorageNodes(
+                new StorageNodeSpec(storageNode1, "storage-node-1"),
+                new StorageNodeSpec(storageNode2, "storage-node-2"));
+
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+
+        // Distributor 1.
+        putStorageStats(storageNode1, 0, 1, 2, 3);
+        putStorageStats(storageNode2, 20, 21, 22, 23);
+        aggregator.updateForDistributor(hostnames, distributor1, storageStats);
+
+        Map<String, NodeMergeStats> expectedStorageNodeStats = new HashMap<>();
+        expectedStorageNodeStats.put("storage-node-1", createStats(storageNode1, 0, 1, 2, 3));
+        expectedStorageNodeStats.put("storage-node-2", createStats(storageNode2, 20, 21, 22, 23));
+
+        verify(updater, times(1)).updateMergeOpMetrics(expectedStorageNodeStats);
     }
 
     @Test
-    public void cluster_may_have_buckets_pending_in_global_space_if_one_node_has_buckets_pending() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3, 4));
-        f.update(1, new ContentClusterStatsBuilder()
-                .add(3, "global", 10, 0)
-                .add(4, "global", 11, 1));
-        assertTrue(f.mayHaveBucketsPendingInGlobalSpace());
-    }
+    public void testMoreDistributorsThanStorageNodes() {
+        final int distributor1 = 1;
+        final int distributor2 = 2;
+        addDistributors(distributor1, distributor2);
 
-    @Test
-    public void cluster_does_not_have_buckets_pending_in_global_space_if_no_nodes_have_buckets_pending() {
-        Fixture f = new Fixture(distributorNodes(1), contentNodes(3, 4));
-        f.update(1, new ContentClusterStatsBuilder()
-                .add(3, "global", 10, 0)
-                .add(4, "global", 11, 0)
-                .add(4, "default", 12, 1));
-        assertFalse(f.mayHaveBucketsPendingInGlobalSpace());
-    }
+        final int storageNode1 = 11;
+        addStorageNodes(new StorageNodeSpec(storageNode1, "storage-node-1"));
 
+        ClusterStatsAggregator aggregator = new ClusterStatsAggregator(distributors, storageNodes, updater);
+
+        // Distributor 1.
+        putStorageStats(storageNode1, 0, 1, 2, 3);
+        aggregator.updateForDistributor(hostnames, distributor1, storageStats);
+
+        // Distributor 2.
+        putStorageStats(storageNode1, 10, 11, 12, 13);
+        aggregator.updateForDistributor(hostnames, distributor2, storageStats);
+
+        Map<String, NodeMergeStats> expectedStorageNodeStats = new HashMap<>();
+        expectedStorageNodeStats.put("storage-node-1", createStats(storageNode1, 0 + 10, 1 + 11, 2 + 12, 3 + 13));
+
+        verify(updater, times(1)).updateMergeOpMetrics(expectedStorageNodeStats);
+    }
 }

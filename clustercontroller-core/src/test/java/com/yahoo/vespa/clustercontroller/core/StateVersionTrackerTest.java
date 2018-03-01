@@ -6,20 +6,19 @@ import com.yahoo.vdslib.state.Node;
 import com.yahoo.vdslib.state.NodeState;
 import com.yahoo.vdslib.state.NodeType;
 import com.yahoo.vdslib.state.State;
-import com.yahoo.vespa.clustercontroller.core.hostinfo.HostInfo;
 import org.junit.Test;
 
-import java.text.ParseException;
 import java.util.Arrays;
 import java.util.Optional;
 
+import static org.hamcrest.CoreMatchers.hasItems;
 import static org.hamcrest.core.IsEqual.equalTo;
 import static org.hamcrest.core.Is.is;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 public class StateVersionTrackerTest {
 
@@ -28,19 +27,15 @@ public class StateVersionTrackerTest {
         return new AnnotatedClusterState(state, Optional.empty(), AnnotatedClusterState.emptyNodeStateReasons());
     }
 
-    private static ClusterStateBundle stateBundleWithoutAnnotations(String stateStr) {
-        return ClusterStateBundle.ofBaselineOnly(stateWithoutAnnotations(stateStr));
-    }
-
     private static StateVersionTracker createWithMockedMetrics() {
-        return new StateVersionTracker();
+        return new StateVersionTracker(mock(MetricUpdater.class));
     }
 
     private static void updateAndPromote(final StateVersionTracker versionTracker,
                                          final AnnotatedClusterState state,
                                          final long timeMs)
     {
-        versionTracker.updateLatestCandidateStateBundle(ClusterStateBundle.ofBaselineOnly(state));
+        versionTracker.updateLatestCandidateState(state);
         versionTracker.promoteCandidateToVersionedState(timeMs);
     }
 
@@ -97,14 +92,14 @@ public class StateVersionTrackerTest {
     @Test
     public void diff_from_initial_state_implies_changed_state() {
         final StateVersionTracker versionTracker = createWithMockedMetrics();
-        versionTracker.updateLatestCandidateStateBundle(stateBundleWithoutAnnotations("cluster:d"));
+        versionTracker.updateLatestCandidateState(stateWithoutAnnotations("cluster:d"));
         assertTrue(versionTracker.candidateChangedEnoughFromCurrentToWarrantPublish());
     }
 
     private static boolean stateChangedBetween(String fromState, String toState) {
         final StateVersionTracker versionTracker = createWithMockedMetrics();
         updateAndPromote(versionTracker, stateWithoutAnnotations(fromState), 123);
-        versionTracker.updateLatestCandidateStateBundle(stateBundleWithoutAnnotations(toState));
+        versionTracker.updateLatestCandidateState(stateWithoutAnnotations(toState));
         return versionTracker.candidateChangedEnoughFromCurrentToWarrantPublish();
     }
 
@@ -173,7 +168,7 @@ public class StateVersionTrackerTest {
                 new Node(NodeType.STORAGE, 0),
                 new NodeState(NodeType.STORAGE, State.UP).setMinUsedBits(15));
         updateAndPromote(versionTracker, stateWithMinBits, 123);
-        versionTracker.updateLatestCandidateStateBundle(stateBundleWithoutAnnotations("distributor:2 storage:2"));
+        versionTracker.updateLatestCandidateState(stateWithoutAnnotations("distributor:2 storage:2"));
         assertFalse(versionTracker.candidateChangedEnoughFromCurrentToWarrantPublish());
     }
 
@@ -229,93 +224,12 @@ public class StateVersionTrackerTest {
         final StateVersionTracker versionTracker = createWithMockedMetrics();
 
         AnnotatedClusterState candidate = stateWithoutAnnotations("distributor:2 storage:2");
-        versionTracker.updateLatestCandidateStateBundle(ClusterStateBundle.ofBaselineOnly(candidate));
+        versionTracker.updateLatestCandidateState(candidate);
         assertThat(versionTracker.getLatestCandidateState(), equalTo(candidate));
 
         candidate = stateWithoutAnnotations("distributor:3 storage:3");
-        versionTracker.updateLatestCandidateStateBundle(ClusterStateBundle.ofBaselineOnly(candidate));
+        versionTracker.updateLatestCandidateState(candidate);
         assertThat(versionTracker.getLatestCandidateState(), equalTo(candidate));
-    }
-
-    private static ClusterState stateOf(String state) {
-        return ClusterState.stateFromString(state);
-    }
-
-    private static ClusterStateBundle baselineBundle(boolean alteredDefaultState) {
-        return ClusterStateBundle
-                .builder(AnnotatedClusterState.withoutAnnotations(stateOf("distributor:1 storage:1")))
-                .bucketSpaces("default")
-                .stateDeriver((state, space) -> {
-                    ClusterState derived = state.clone();
-                    if (alteredDefaultState) {
-                        derived.setNodeState(Node.ofStorage(0), new NodeState(NodeType.STORAGE, State.DOWN));
-                    }
-                    return derived;
-                })
-                .deriveAndBuild();
-    }
-
-    @Test
-    public void version_change_check_takes_derived_states_into_account() {
-        final StateVersionTracker versionTracker = createWithMockedMetrics();
-        versionTracker.updateLatestCandidateStateBundle(baselineBundle(false));
-        versionTracker.promoteCandidateToVersionedState(1234);
-
-        // Not marked changed with no changes across bucket spaces
-        versionTracker.updateLatestCandidateStateBundle(baselineBundle(false));
-        assertFalse(versionTracker.candidateChangedEnoughFromCurrentToWarrantPublish());
-
-        // Changing state in default space marks as sufficiently changed
-        versionTracker.updateLatestCandidateStateBundle(baselineBundle(true));
-        assertTrue(versionTracker.candidateChangedEnoughFromCurrentToWarrantPublish());
-    }
-
-    @Test
-    public void buckets_pending_state_is_tracked_between_cluster_states() {
-        final StateVersionTracker tracker = createWithMockedMetrics();
-        final NodeInfo distributorNode = mock(DistributorNodeInfo.class);
-        when(distributorNode.isDistributor()).thenReturn(true);
-        assertFalse(tracker.bucketSpaceMergeCompletionStateHasChanged());
-
-        tracker.updateLatestCandidateStateBundle(ClusterStateBundle
-                .ofBaselineOnly(stateWithoutAnnotations("distributor:1 storage:1")));
-        tracker.promoteCandidateToVersionedState(1234);
-        assertFalse(tracker.bucketSpaceMergeCompletionStateHasChanged());
-
-        // Give 'global' bucket space no buckets pending, which is the same as previous stats
-        tracker.handleUpdatedHostInfo(distributorNode, createHostInfo(0));
-        assertFalse(tracker.bucketSpaceMergeCompletionStateHasChanged());
-
-        // Give 'global' bucket space buckets pending, which is different from previous stats
-        tracker.handleUpdatedHostInfo(distributorNode, createHostInfo(1));
-        assertTrue(tracker.bucketSpaceMergeCompletionStateHasChanged());
-
-        tracker.updateLatestCandidateStateBundle(ClusterStateBundle
-                .ofBaselineOnly(stateWithoutAnnotations("distributor:1 storage:1")));
-        assertFalse(tracker.bucketSpaceMergeCompletionStateHasChanged());
-    }
-
-    private HostInfo createHostInfo(long bucketsPending) {
-        return HostInfo.createHostInfo(
-                "{\n" +
-                "\"cluster-state-version\": 2,\n" +
-                "\"distributor\": {\n" +
-                "  \"storage-nodes\": [\n" +
-                "    {\n" +
-                "      \"node-index\": 0,\n" +
-                "      \"bucket-spaces\": [\n" +
-                "        {\n" +
-                "          \"name\": \"global\"\n," +
-                "          \"buckets\": {\n" +
-                "            \"total\": 5,\n" +
-                "            \"pending\": " + bucketsPending + "\n" +
-                "          }\n" +
-                "        }\n" +
-                "      ]\n" +
-                "    }\n" +
-                "  ]\n" +
-                "}\n" +
-                "}");
     }
 
 }

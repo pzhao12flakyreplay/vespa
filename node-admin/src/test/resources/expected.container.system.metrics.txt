@@ -19,7 +19,6 @@ s:
     },
     "dimensions": {
         "host": "host1.test.yahoo.com",
-        "orchestratorState":"ALLOWED_TO_BE_DOWN",
         "role": "tenants",
         "state": "active",
         "parentHostname": "parent.host.name.yahoo.com"
@@ -43,9 +42,8 @@ s:
         "net.in.errors": 55
     },
     "dimensions": {
-        "role": "tenants",
         "host": "host1.test.yahoo.com",
-        "orchestratorState":"ALLOWED_TO_BE_DOWN",
+        "role": "tenants",
         "state": "active",
         "interface": "eth0",
         "parentHostname": "parent.host.name.yahoo.com"
@@ -69,9 +67,8 @@ s:
         "net.in.errors": 0
     },
     "dimensions": {
-        "role": "tenants",
         "host": "host1.test.yahoo.com",
-        "orchestratorState":"ALLOWED_TO_BE_DOWN",
+        "role": "tenants",
         "state": "active",
         "interface": "eth1",
         "parentHostname": "parent.host.name.yahoo.com"

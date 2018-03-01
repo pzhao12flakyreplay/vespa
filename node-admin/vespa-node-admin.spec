@@ -18,7 +18,6 @@ URL:            http://vespa.ai
 Requires: bash
 Requires: java-1.8.0-openjdk-headless
 Requires: vespa-standalone-container
-Requires: vespa-node-maintainer
 
 Conflicts: vespa
 
@@ -33,7 +32,6 @@ cp node-admin/src/main/application/services.xml "$app_dir"
 
 declare -a jar_components=(
   node-admin/target/node-admin-jar-with-dependencies.jar
-  node-admin/target/node-admin-app/components/*
   docker-api/target/docker-api-jar-with-dependencies.jar
 )
 for path in "${jar_components[@]}"; do
@@ -42,9 +40,6 @@ done
 
 mkdir -p %buildroot%_prefix/libexec/vespa
 cp node-admin/src/main/sh/node-admin.sh %buildroot%_prefix/libexec/vespa
-
-mkdir -p %buildroot%_prefix/libexec/vespa/node-admin
-cp node-admin/scripts/maintenance.sh %buildroot%_prefix/libexec/vespa/node-admin
 
 %clean
 rm -rf %buildroot

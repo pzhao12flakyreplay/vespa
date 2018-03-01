@@ -152,7 +152,7 @@ FNetListener::RPC_setSystemState2(FRT_RPCRequest *req)
                                     req->GetParams()->GetValue(0)._string._len);
     lib::ClusterState systemState(systemStateStr);
 
-    auto cmd(std::make_shared<api::SetSystemStateCommand>(lib::ClusterStateBundle(systemState)));
+    auto cmd(std::make_shared<api::SetSystemStateCommand>(systemState));
     cmd->setPriority(api::StorageMessage::VERYHIGH);
 
     // Create a request object to avoid needing a separate transport type

@@ -144,7 +144,6 @@ public abstract class FleetControllerTest implements Waiter {
                 options.minRatioOfStorageNodesUp);
         NodeStateGatherer stateGatherer = new NodeStateGatherer(timer, timer, log);
         Communicator communicator = new RPCCommunicator(
-                RPCCommunicator.createRealSupervisor(),
                 timer,
                 options.fleetControllerIndex,
                 options.nodeStateRequestTimeoutMS,

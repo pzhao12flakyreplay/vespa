@@ -17,12 +17,17 @@
     <description>Keeps track of node assignment in a multi-application setup.</description>
 
     <dependencies>
-        <!-- provided -->
         <dependency>
             <groupId>com.yahoo.vespa</groupId>
             <artifactId>container-dev</artifactId>
             <version>${project.version}</version>
             <scope>provided</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.yahoo.vespa</groupId>
+            <artifactId>application</artifactId>
+            <version>${project.version}</version>
+            <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>com.yahoo.vespa</groupId>
@@ -64,21 +69,7 @@
         <dependency>
             <groupId>com.google.guava</groupId>
             <artifactId>guava</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <scope>provided</scope>
-        </dependency>
-        <dependency>
-            <groupId>com.yahoo.vespa</groupId>
-            <artifactId>orchestrator</artifactId>
-            <version>${project.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <!-- compile -->
+       </dependency>
         <dependency>
             <groupId>com.fasterxml.jackson.datatype</groupId>
             <artifactId>jackson-datatype-joda</artifactId>
@@ -95,21 +86,17 @@
             </exclusions>
         </dependency>
         <dependency>
-            <groupId>org.bouncycastle</groupId>
-            <artifactId>bcpkix-jdk15on</artifactId>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-databind</artifactId>
+            <scope>provided</scope>
         </dependency>
-        <dependency>
-            <groupId>org.apache.httpcomponents</groupId>
-            <artifactId>httpclient</artifactId>
-        </dependency>
-
-        <!-- test -->
         <dependency>
             <groupId>com.yahoo.vespa</groupId>
-            <artifactId>application</artifactId>
+            <artifactId>orchestrator</artifactId>
             <version>${project.version}</version>
-            <scope>test</scope>
+            <scope>provided</scope>
         </dependency>
+
         <dependency>
             <groupId>com.yahoo.vespa</groupId>
             <artifactId>testutil</artifactId>
@@ -142,14 +129,14 @@
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <configuration>
-                    <compilerArgs>
-                        <arg>-Xlint:all</arg>
-                        <arg>-Xlint:-try</arg>
-                        <arg>-Xlint:-serial</arg>
-                        <arg>-Werror</arg>
-                    </compilerArgs>
-                </configuration>
+		<configuration>
+		  <compilerArgs>
+		    <arg>-Xlint:all</arg>
+		    <arg>-Xlint:-try</arg>
+		    <arg>-Xlint:-serial</arg>
+		    <arg>-Werror</arg>
+		  </compilerArgs>
+		</configuration>
             </plugin>
         </plugins>
     </build>

@@ -48,8 +48,28 @@ public class Join extends PrimitiveTensorFunction {
     }
 
     /** Returns the type resulting from applying Join to the two given types */
+    // TODO: Replace implementation by new TensorType.Builder(a.type(), b.type()).build();
     public static TensorType outputType(TensorType a, TensorType b) {
-        return new TensorType.Builder(a, b).build();
+        TensorType.Builder typeBuilder = new TensorType.Builder();
+        for (int i = 0; i < a.dimensions().size(); ++i) {
+            TensorType.Dimension aDim = a.dimensions().get(i);
+            for (int j = 0; j < b.dimensions().size(); ++j) {
+                TensorType.Dimension bDim = b.dimensions().get(j);
+                if (aDim.name().equals(bDim.name())) { // include
+                    if (aDim.isIndexed() && bDim.isIndexed()) {
+                        if (aDim.size().isPresent() || bDim.size().isPresent())
+                            typeBuilder.indexed(aDim.name(), Math.min(aDim.size().orElse(Long.MAX_VALUE),
+                                                                      bDim.size().orElse(Long.MAX_VALUE)));
+                        else
+                            typeBuilder.indexed(aDim.name());
+                    }
+                    else {
+                        typeBuilder.mapped(aDim.name());
+                    }
+                }
+            }
+        }
+        return typeBuilder.build();
     }
 
     public DoubleBinaryOperator combinator() { return combinator; }
@@ -75,12 +95,12 @@ public class Join extends PrimitiveTensorFunction {
     }
 
     @Override
-    public <NAMETYPE extends TypeContext.Name> TensorType type(TypeContext<NAMETYPE> context) {
+    public TensorType type(TypeContext context) {
         return new TensorType.Builder(argumentA.type(context), argumentB.type(context)).build();
     }
 
     @Override
-    public <NAMETYPE extends TypeContext.Name> Tensor evaluate(EvaluationContext<NAMETYPE> context) {
+    public Tensor evaluate(EvaluationContext context) {
         Tensor a = argumentA.evaluate(context);
         Tensor b = argumentB.evaluate(context);
         TensorType joinedType = new TensorType.Builder(a.type(), b.type()).build();
@@ -231,7 +251,7 @@ public class Join extends PrimitiveTensorFunction {
         int[] aToIndexes = mapIndexes(a.type(), joinedType);
         int[] bToIndexes = mapIndexes(b.type(), joinedType);
         joinTo(a, b, joinedType, joinedSize, aToIndexes, bToIndexes, false, builder);
-//        joinTo(b, a, joinedType, joinedSize, bToIndexes, aToIndexes, true, builder);
+        joinTo(b, a, joinedType, joinedSize, bToIndexes, aToIndexes, true, builder);
         return builder.build();
     }
 

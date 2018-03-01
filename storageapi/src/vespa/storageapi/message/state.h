@@ -4,8 +4,7 @@
 
 #include <vespa/storageapi/messageapi/storagecommand.h>
 #include <vespa/storageapi/messageapi/storagereply.h>
-#include <vespa/vdslib/state/nodestate.h>
-#include <vespa/vdslib/state/cluster_state_bundle.h>
+#include <vespa/vdslib/state/clusterstate.h>
 
 namespace storage::api {
 
@@ -61,13 +60,11 @@ public:
  *  put/get/remove etx)
  */
 class SetSystemStateCommand : public StorageCommand {
-    lib::ClusterStateBundle _state;
+    lib::ClusterState _state;
 
 public:
-    explicit SetSystemStateCommand(const lib::ClusterStateBundle &state);
-    explicit SetSystemStateCommand(const lib::ClusterState &state);
-    const lib::ClusterState& getSystemState() const { return *_state.getBaselineClusterState(); }
-    const lib::ClusterStateBundle& getClusterStateBundle() const { return _state; }
+    explicit SetSystemStateCommand(const lib::ClusterState&);
+    const lib::ClusterState& getSystemState() const { return _state; }
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     DECLARE_STORAGECOMMAND(SetSystemStateCommand, onSetSystemState)
@@ -80,14 +77,13 @@ public:
  * @brief Reply received after a SetSystemStateCommand.
  */
 class SetSystemStateReply : public StorageReply {
-    lib::ClusterStateBundle _state;
+    lib::ClusterState _state;
 
 public:
     explicit SetSystemStateReply(const SetSystemStateCommand& cmd);
 
     // Not serialized. Available locally
-    const lib::ClusterState& getSystemState() const { return *_state.getBaselineClusterState(); }
-    const lib::ClusterStateBundle& getClusterStateBundle() const { return _state; }
+    const lib::ClusterState& getSystemState() const { return _state; }
     void print(std::ostream& out, bool verbose, const std::string& indent) const override;
 
     DECLARE_STORAGEREPLY(SetSystemStateReply, onSetSystemStateReply)

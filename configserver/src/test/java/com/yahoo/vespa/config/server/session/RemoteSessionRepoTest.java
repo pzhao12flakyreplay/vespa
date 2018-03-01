@@ -173,11 +173,6 @@ public class RemoteSessionRepoTest extends TestWithCurator {
         }
 
         @Override
-        public void removeUnusedApplications() {
-            // do nothing
-        }
-
-        @Override
         public void close() {
 
         }

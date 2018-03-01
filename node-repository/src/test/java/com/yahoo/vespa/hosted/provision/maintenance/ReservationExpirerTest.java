@@ -14,7 +14,6 @@ import com.yahoo.vespa.curator.Curator;
 import com.yahoo.vespa.curator.mock.MockCurator;
 import com.yahoo.vespa.hosted.provision.Node;
 import com.yahoo.vespa.hosted.provision.NodeRepository;
-import com.yahoo.vespa.hosted.provision.node.Agent;
 import com.yahoo.vespa.hosted.provision.provisioning.FlavorConfigBuilder;
 import com.yahoo.vespa.hosted.provision.provisioning.NodeRepositoryProvisioner;
 import com.yahoo.vespa.hosted.provision.testutils.MockNameResolver;
@@ -34,10 +33,10 @@ import static org.junit.Assert.assertFalse;
  */
 public class ReservationExpirerTest {
 
-    private final Curator curator = new MockCurator();
+    private Curator curator = new MockCurator();
 
     @Test
-    public void ensure_reservation_times_out() {
+    public void ensure_reservation_times_out() throws InterruptedException {
         ManualClock clock = new ManualClock();
         NodeFlavors flavors = FlavorConfigBuilder.createDummies("default");
         NodeRepository nodeRepository = new NodeRepository(flavors, curator, clock, Zone.defaultZone(),
@@ -50,11 +49,11 @@ public class ReservationExpirerTest {
         nodes.add(nodeRepository.createNode(UUID.randomUUID().toString(), UUID.randomUUID().toString(), Optional.empty(), flavors.getFlavorOrThrow("default"), NodeType.tenant));
         nodes.add(nodeRepository.createNode(UUID.randomUUID().toString(), UUID.randomUUID().toString(), Optional.empty(), flavors.getFlavorOrThrow("default"), NodeType.host));
         nodes = nodeRepository.addNodes(nodes);
-        nodes = nodeRepository.setDirty(nodes, Agent.system, getClass().getSimpleName());
+        nodes = nodeRepository.setDirty(nodes);
 
         // Reserve 2 nodes
         assertEquals(2, nodeRepository.getNodes(NodeType.tenant, Node.State.dirty).size());
-        nodeRepository.setReady(nodes, Agent.system, getClass().getSimpleName());
+        nodeRepository.setReady(nodes);
         ApplicationId applicationId = new ApplicationId.Builder().tenant("foo").applicationName("bar").instanceName("fuz").build();
         ClusterSpec cluster = ClusterSpec.request(ClusterSpec.Type.content, ClusterSpec.Id.from("test"), Version.fromString("6.42"));
         provisioner.prepare(applicationId, cluster, Capacity.fromNodeCount(2), 1, null);

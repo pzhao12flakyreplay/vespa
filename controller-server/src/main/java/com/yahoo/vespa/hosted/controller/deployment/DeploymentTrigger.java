@@ -47,7 +47,7 @@ public class DeploymentTrigger {
 
     private final Controller controller;
     private final Clock clock;
-    private final DeploymentQueue deploymentQueue;
+    private final BuildSystem buildSystem;
     private final DeploymentOrder order;
 
     public DeploymentTrigger(Controller controller, CuratorDb curator, Clock clock) {
@@ -56,7 +56,7 @@ public class DeploymentTrigger {
         Objects.requireNonNull(clock,"clock cannot be null");
         this.controller = controller;
         this.clock = clock;
-        this.deploymentQueue = new DeploymentQueue(controller, curator);
+        this.buildSystem = new PolledBuildSystem(controller, curator);
         this.order = new DeploymentOrder(controller);
         this.jobTimeout = controller.system().equals(SystemName.main) ? Duration.ofHours(12) : Duration.ofHours(1);
     }
@@ -64,7 +64,7 @@ public class DeploymentTrigger {
     /** Returns the time in the past before which jobs are at this moment considered unresponsive */
     public Instant jobTimeoutLimit() { return clock.instant().minus(jobTimeout); }
 
-    public DeploymentQueue deploymentQueue() { return deploymentQueue; }
+    public BuildSystem buildSystem() { return buildSystem; }
 
     public DeploymentOrder deploymentOrder() { return order; }
 
@@ -86,9 +86,10 @@ public class DeploymentTrigger {
             if (report.success()) {
                 if (report.jobType() == JobType.component) {
                     if (acceptNewApplicationVersionNow(application)) {
-                        // Note that in case of an ongoing upgrade this may result in both the upgrade and application
-                        // change being deployed together
-                        application = application.withChange(application.change().with(applicationVersion));
+                        // Set this as the change we are doing, unless we are already pushing a platform change
+                        if ( ! ( application.change().platform().isPresent())) {
+                            application = application.withChange(Change.of(applicationVersion));
+                        }
                     }
                     else { // postpone
                         applications().store(application.withOutstandingChange(Change.of(applicationVersion)));
@@ -135,6 +136,8 @@ public class DeploymentTrigger {
                 if (change.platform().get().isAfter(deployment.version())) return false; // later is ok
             }
             if (change.application().isPresent()) {
+                // If we don't yet know the application version we are deploying, then we are not complete
+                if (change.application().get().isUnknown()) return false;
                 if ( ! change.application().get().equals(deployment.applicationVersion())) return false;
             }
         }
@@ -270,7 +273,7 @@ public class DeploymentTrigger {
      */
     public void cancelChange(ApplicationId applicationId) {
         applications().lockOrThrow(applicationId, application -> {
-            deploymentQueue.removeJobs(application.id());
+            buildSystem.removeJobs(application.id());
             applications().store(application.withChange(Change.empty()));
         });
     }
@@ -345,7 +348,7 @@ public class DeploymentTrigger {
         log.info(String.format("Triggering %s for %s, %s: %s", jobType, application,
                                application.change().isPresent() ? "deploying " + application.change() : "restarted deployment",
                                reason));
-        deploymentQueue.addJob(application.id(), jobType, first);
+        buildSystem.addJob(application.id(), jobType, first);
         return application.withJobTriggering(jobType,
                                              application.change(),
                                              clock.instant(),

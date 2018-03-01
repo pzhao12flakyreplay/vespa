@@ -4,24 +4,22 @@ package com.yahoo.vespa.model.container;
 import com.yahoo.config.provision.AthenzDomain;
 import com.yahoo.config.provision.AthenzService;
 import com.yahoo.config.provision.HostName;
-import com.yahoo.container.bundle.BundleInstantiationSpecification;
 import com.yahoo.container.core.identity.IdentityConfig;
-import com.yahoo.osgi.provider.model.ComponentModel;
+import com.yahoo.container.jdisc.athenz.impl.AthenzIdentityProviderImpl;
 import com.yahoo.vespa.model.container.component.SimpleComponent;
 
 /**
  * @author mortent
  */
 public class IdentityProvider extends SimpleComponent implements IdentityConfig.Producer {
-    public static final String CLASS = "com.yahoo.vespa.athenz.identityprovider.AthenzIdentityProviderImpl";
-    public static final String BUNDLE = "vespa-athenz";
+    public static final String CLASS = AthenzIdentityProviderImpl.class.getName();
 
     private final AthenzDomain domain;
     private final AthenzService service;
     private final HostName loadBalancerName;
 
     public IdentityProvider(AthenzDomain domain, AthenzService service, HostName loadBalancerName) {
-        super(new ComponentModel(BundleInstantiationSpecification.getFromStrings(CLASS, CLASS, BUNDLE)));
+        super(CLASS);
         this.domain = domain;
         this.service = service;
         this.loadBalancerName = loadBalancerName;

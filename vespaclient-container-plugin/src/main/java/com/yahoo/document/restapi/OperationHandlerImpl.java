@@ -295,12 +295,12 @@ public class OperationHandlerImpl implements OperationHandler {
     }
 
     @Override
-    public Optional<String> get(RestUri restUri, Optional<String> fieldSet) throws RestApiException {
+    public Optional<String> get(RestUri restUri) throws RestApiException {
         SyncSession syncSession = syncSessions.alloc();
         setRoute(syncSession, Optional.empty());
         try {
             DocumentId id = new DocumentId(restUri.generateFullId());
-            final Document document = syncSession.get(id, fieldSet.orElse(restUri.getDocumentType() + ":[document]"), DocumentProtocol.Priority.NORMAL_1);
+            final Document document = syncSession.get(id, restUri.getDocumentType() + ":[document]", DocumentProtocol.Priority.NORMAL_1);
             if (document == null) {
                 return Optional.empty();
             }
@@ -316,11 +316,6 @@ public class OperationHandlerImpl implements OperationHandler {
         }
     }
 
-    @Override
-    public Optional<String> get(RestUri restUri) throws RestApiException {
-        return get(restUri, Optional.empty());
-    }
-
     protected BucketSpaceRoute resolveBucketSpaceRoute(Optional<String> wantedCluster, String docType) throws RestApiException {
         final List<ClusterDef> clusters = clusterEnumerator.enumerateClusters();
         ClusterDef clusterDef = resolveClusterDef(wantedCluster, clusters);
@@ -328,7 +323,7 @@ public class OperationHandlerImpl implements OperationHandler {
         if (!targetBucketSpace.isPresent()) {
             throw new RestApiException(Response.createErrorResponse(400, String.format(
                     "Document type '%s' in cluster '%s' is not mapped to a known bucket space", docType, clusterDef.getName()),
-                    RestUri.apiErrorCodes.UNKNOWN_BUCKET_SPACE));
+                    RestUri.apiErrorCodes.UNKNOWN_BUCKET_SPACE)); // TODO own code
         }
         return new BucketSpaceRoute(clusterDefToRoute(clusterDef), targetBucketSpace.get());
     }

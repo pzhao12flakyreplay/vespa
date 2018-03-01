@@ -48,22 +48,20 @@
                         "count": 16
                     }
                 },
-                "bucket-spaces": [
-                    {
-                        "name": "default",
-                        "buckets": {
-                            "total": 11,
-                            "pending": 3
-                        }
+                "outstanding-merge-ops": {
+                    "syncing": {
+                        "buckets": 1
                     },
-                    {
-                        "name": "global",
-                        "buckets": {
-                            "total": 13,
-                            "pending": 5
-                        }
+                    "copying-in": {
+                        "buckets": 2
+                    },
+                    "moving-out": {
+                        "buckets": 3
+                    },
+                    "copying-out": {
+                        "buckets": 4
                     }
-                ]
+                }
             },
             {
                 "node-index": 1,
@@ -73,13 +71,24 @@
                         "latency-ms-sum": 17,
                         "count": 18
                     }
-                },
-                "bucket-spaces": [
-                    {
-                        "name": "default"
+                 },
+                 "outstanding-merge-ops": {
+                    "syncing": {
+                        "buckets": 1
+                    },
+                    "copying-in": {
+                        "buckets": 2
+                    },
+                    "moving-out": {
+                        "buckets": 3
+                    },
+                    "copying-out": {
+                        "buckets": 4
                     }
-                ]
+                }
+
             }
+
         ]
     }
 }

@@ -65,7 +65,7 @@ public class JobList {
         return new JobList(list, ! negate);
     }
 
-    /** Returns the subset of jobs which are currently upgrading */
+    /** Returns the subset of jobs which are current upgrading */
     public JobList upgrading() { // TODO: Centralise and standardise reasoning about upgrades and application versions.
         return filter(job ->      job.lastSuccess().isPresent()
                              &&   job.lastTriggered().isPresent()
@@ -155,6 +155,10 @@ public class JobList {
             return filter(run -> run.version().equals(version));
         }
 
+        public JobList upgrade() {
+            return filter(JobRun::upgrade);
+        }
+
         /** Transforms the JobRun condition to a JobStatus condition, by considering only the JobRun mapped by which, and executes */
         private JobList filter(Predicate<JobRun> condition) {
             return JobList.this.filter(job -> which.apply(job).filter(condition).isPresent());
@@ -162,11 +166,13 @@ public class JobList {
 
     }
 
+
     // ----------------------------------- Internal helpers
 
     private static boolean failingApplicationChange(JobStatus job) {
         if (   job.isSuccess()) return false;
         if ( ! job.lastSuccess().isPresent()) return true; // An application which never succeeded is surely bad.
+        if ( job.lastSuccess().get().applicationVersion().isUnknown()) return true; // Indicates the component job, which is always an application change.
         if ( ! job.firstFailing().get().version().equals(job.lastSuccess().get().version())) return false; // Version change may be to blame.
         return ! job.firstFailing().get().applicationVersion().equals(job.lastSuccess().get().applicationVersion()); // Return whether there is an application change.
     }
